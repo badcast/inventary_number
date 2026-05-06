@@ -1,0 +1,7 @@
+CMakeLists.txt.user
+.vscode 
+build
+.qtcreator
+.vscode
+.cache
+.env*
