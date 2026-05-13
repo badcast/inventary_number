@@ -42,66 +42,11 @@ PrintSetupWindow *PrintSetupWindow::show_as(Gtk::Window &parent, std::vector<std
 
     auto window = new PrintSetupWindow(parent);
     window->m_data = std::move(data);
-    window->m_dup = window->m_data.size();
-    window->m_spin_dup.set_sensitive(false);
-    window->m_spin_dup.set_value(window->m_dup);
-    window->m_spin_dup.set_sensitive(true);
-
-    window->m_spin_width_cm.signal_changed().freeze
-    window->m_spin_width_cm.set_value(window->m_item_width_cm);
-    window->m_spin_width_cm.set_sensitive(true);
-
-    window->m_spin_height_cm.set_sensitive(false);
-    window->m_spin_height_cm.set_value(window->m_item_height_cm);
-    window->m_spin_height_cm.set_sensitive(true);
-
-    window->update_status();
-
     window->signal_hide().connect([window]() { delete window; });
+    window->soft_update_state();
     window->present();
     return window;
 }
-void inspect_pixel_data(const Glib::RefPtr<Gdk::Pixbuf>& pixbuf) {
-    if (!pixbuf) return;
-
-    int width = pixbuf->get_width();
-    int height = pixbuf->get_height();
-    int n_channels = pixbuf->get_n_channels();
-    int rowstride = pixbuf->get_rowstride();
-    unsigned char* pixels = pixbuf->get_pixels();
-
-    if (!pixels) {
-        std::cout << "Pixel data is NULL!" << std::endl;
-        return;
-    }
-
-    // Проверяем первый пиксель (0,0)
-    int offset = 0; // row 0, col 0
-    std::cout << "First pixel (0,0):" << std::endl;
-    if (n_channels >= 3) {
-        std::cout << "  R: " << (int)pixels[offset + 0] << std::endl;
-        std::cout << "  G: " << (int)pixels[offset + 1] << std::endl;
-        std::cout << "  B: " << (int)pixels[offset + 2] << std::endl;
-        if (n_channels == 4) {
-            std::cout << "  A: " << (int)pixels[offset + 3] << std::endl;
-        }
-    }
-
-    // Проверяем центральный пиксель
-    int center_x = width / 2;
-    int center_y = height / 2;
-    int center_offset = center_y * rowstride + center_x * n_channels;
-    std::cout << "\nCenter pixel (" << center_x << "," << center_y << "):" << std::endl;
-    if (n_channels >= 3) {
-        std::cout << "  R: " << (int)pixels[center_offset + 0] << std::endl;
-        std::cout << "  G: " << (int)pixels[center_offset + 1] << std::endl;
-        std::cout << "  B: " << (int)pixels[center_offset + 2] << std::endl;
-        if (n_channels == 4) {
-            std::cout << "  A: " << (int)pixels[center_offset + 3] << std::endl;
-        }
-    }
-}
-
 
 void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, int page_nr, double width_pt, double height_pt, bool quality)
 {
@@ -173,7 +118,7 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
             double x = std::round(ml + c * (cw / cols) + (cw / cols - iw_pt) / 2);
             double y = std::round(mt + r * (ch / rows) + (ch / rows - ih_pt) / 2);
             Glib::RefPtr<Gdk::Pixbuf> scaled = barcode_pixbuf->scale_simple((int) iw_pt, (int) ih_pt, _interptype);
-            Gdk::Cairo::set_source_pixbuf(cr,scaled, x, y);
+            Gdk::Cairo::set_source_pixbuf(cr, scaled, x, y);
             cr->paint();
         }
     }
@@ -259,7 +204,6 @@ void PrintSetupWindow::init_ui()
     overlay->add_overlay(m_scroll_preview);
     m_left_box.append(*overlay);
 
-    // Навигация
     m_nav.set_halign(Gtk::Align::CENTER);
     m_nav.set_margin_top(6);
     m_nav.set_spacing(12);
@@ -282,51 +226,36 @@ void PrintSetupWindow::init_ui()
     m_left_box.append(m_nav);
     m_paned.set_start_child(m_left_box);
 
-    // Правая панель (Настройки)
     m_right_box.set_margin(12);
     m_right_box.set_vexpand(true);
     m_right_box.set_spacing(12);
+    m_spin_width_cm.set_value(m_item_width_cm);
+    m_spin_height_cm.set_value(m_item_height_cm);
+    m_combo_cutline.set_active(0);
 
     auto lbl_settings = Gtk::make_managed<Gtk::Label>("Настройки");
     lbl_settings->add_css_class("title-4");
     lbl_settings->set_halign(Gtk::Align::START);
     m_right_box.append(*lbl_settings);
 
-    // Счётчик объектов
-    auto box_dup = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
-    auto lbl_dup = Gtk::make_managed<Gtk::Label>("Объектов:");
-    lbl_dup->set_xalign(0);
-    lbl_dup->set_hexpand(true);
-    box_dup->append(*lbl_dup);
-
-    m_spin_dup.set_range(1, 1000);
-    m_spin_dup.set_sensitive(false);
-    m_spin_dup.set_width_chars(4);
-    m_spin_dup.add_css_class("flat");
-    box_dup->append(m_spin_dup);
-    m_controls.append(*box_dup);
-
-    // Пресеты
     auto box_preset = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::VERTICAL, 3);
     auto lbl_preset = Gtk::make_managed<Gtk::Label>("Размер наклейки:");
     lbl_preset->set_xalign(0);
     box_preset->append(*lbl_preset);
 
-    for(const auto &p : m_presets)
-    {
+    for(const LabelPreset &p : m_presets)
         m_combo_preset.append(p.name);
-    }
-    m_combo_preset.signal_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::on_preset_changed));
+    m_combo_preset.set_active(0);
+    m_combo_preset.signal_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
     box_preset->append(m_combo_preset);
     m_controls.append(*box_preset);
 
-    // Ручной размер
     auto box_size = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
     m_spin_width_cm.set_range(1.0, 20.0);
     m_spin_width_cm.set_digits(1);
     m_spin_width_cm.set_increments(0.1, 1.0);
     m_spin_width_cm.set_width_chars(5);
-    m_spin_width_cm.signal_value_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::on_size_cm_changed));
+    m_spin_width_cm.signal_value_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
     box_size->append(m_spin_width_cm);
 
     box_size->append(*Gtk::make_managed<Gtk::Label>("×"));
@@ -335,12 +264,11 @@ void PrintSetupWindow::init_ui()
     m_spin_height_cm.set_digits(1);
     m_spin_height_cm.set_increments(0.1, 1.0);
     m_spin_height_cm.set_width_chars(5);
-    m_spin_height_cm.signal_value_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::on_size_cm_changed));
+    m_spin_height_cm.signal_value_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
     box_size->append(m_spin_height_cm);
     box_size->append(*Gtk::make_managed<Gtk::Label>("см"));
     m_controls.append(*box_size);
 
-    // Линии обрезки
     auto box_cut = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::VERTICAL, 3);
     auto lbl_cut = Gtk::make_managed<Gtk::Label>("Линии обрезки:");
     lbl_cut->set_xalign(0);
@@ -351,22 +279,20 @@ void PrintSetupWindow::init_ui()
     m_combo_cutline.append("Вертикальные");
     m_combo_cutline.append("Гориз. + Вертик.");
     m_combo_cutline.set_active(m_combo_cutline.get_model()->children().size() - 1);
-    m_combo_cutline.signal_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::on_preset_changed));
+    m_combo_cutline.signal_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
     box_cut->append(m_combo_cutline);
     m_controls.append(*box_cut);
 
-    // Чекбоксы
     m_chb_no_border.set_active(true);
-    m_chb_no_border.signal_toggled().connect(sigc::mem_fun(*this, &PrintSetupWindow::on_preset_changed));
+    m_chb_no_border.signal_toggled().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
     m_controls.append(m_chb_no_border);
 
     m_chb_show_text.set_active(true);
-    m_chb_show_text.signal_toggled().connect(sigc::mem_fun(*this, &PrintSetupWindow::on_preset_changed));
+    m_chb_show_text.signal_toggled().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
     m_controls.append(m_chb_show_text);
 
     m_right_box.append(m_controls);
 
-    // Кнопка печати
     m_bottom_box.set_halign(Gtk::Align::END);
     m_bottom_box.set_valign(Gtk::Align::END);
     m_bottom_box.set_vexpand(true);
@@ -428,7 +354,7 @@ void PrintSetupWindow::init_actions()
     m_actions = Gio::SimpleActionGroup::create();
     m_actions->add_action("print", sigc::mem_fun(*this, &PrintSetupWindow::on_print));
     m_actions->add_action("page_setup", sigc::mem_fun(*this, &PrintSetupWindow::on_page_setup));
-    m_actions->add_action("close", sigc::mem_fun(*this, &PrintSetupWindow::on_close));
+    m_actions->add_action("close", sigc::mem_fun(*this, &PrintSetupWindow::close));
     insert_action_group("win", m_actions);
 
     if(auto app = get_application())
@@ -475,13 +401,14 @@ void PrintSetupWindow::on_page_setup()
     auto new_setup = Gtk::run_page_setup_dialog(*this, m_page_setup, m_print_settings);
     m_page_setup = new_setup;
     m_page = 0;
-    update_pagination();
-    draw_preview_page();
-    update_status();
+    soft_update_state();
 }
 
-void PrintSetupWindow::update_pagination()
+void PrintSetupWindow::soft_update_state()
 {
+    if(m_updating_preset)
+        return;
+    m_updating_preset = true;
     double pw = m_page_setup->get_paper_width(Gtk::Unit::POINTS);
     double ph = m_page_setup->get_paper_height(Gtk::Unit::POINTS);
 
@@ -514,54 +441,30 @@ void PrintSetupWindow::update_pagination()
     int rows = std::max(1, (int) (ch / ih_pt));
     int per_page = cols * rows;
 
-    m_pages_total = std::max(1, (int) std::ceil((double) m_dup / per_page));
-    if(m_page >= m_pages_total)
-        m_page = m_pages_total - 1;
-}
-
-void PrintSetupWindow::on_preset_changed()
-{
-    if(m_updating_preset)
-        return;
-
     m_cutline = static_cast<CutLineType>(m_combo_cutline.get_active_row_number());
     int idx = m_combo_preset.get_active_row_number();
 
     if(idx >= 0 && idx < (int) m_presets.size() - 1)
     {
-        m_updating_preset = true;
         m_item_width_cm = m_presets[idx].width_cm;
         m_item_height_cm = m_presets[idx].height_cm;
         m_spin_width_cm.set_value(m_item_width_cm);
         m_spin_height_cm.set_value(m_item_height_cm);
-        m_updating_preset = false;
     }
-
-    update_pagination();
-    draw_preview_page();
-    update_status();
-}
-
-void PrintSetupWindow::on_size_cm_changed()
-{
-    if(m_updating_preset)
-        return;
+    else
+        m_combo_preset.set_active(m_presets.size() - 1);
 
     m_item_width_cm = m_spin_width_cm.get_value();
     m_item_height_cm = m_spin_height_cm.get_value();
 
-    m_updating_preset = true;
-    m_combo_preset.set_active(m_presets.size() - 1);
+    m_pages_total = std::max(1, (int) std::ceil((double) m_dup / per_page));
+    if(m_page >= m_pages_total)
+        m_page = m_pages_total - 1;
+
     m_updating_preset = false;
-
-    update_pagination();
-    draw_preview_page();
     update_status();
-}
 
-void PrintSetupWindow::on_close()
-{
-    close();
+    draw_preview_page();
 }
 
 void PrintSetupWindow::on_prev_page()

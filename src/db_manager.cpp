@@ -15,6 +15,12 @@ inline std::string toUpper(std::string str)
     return str;
 }
 
+inline std::string trimStart(const std::string &str)
+{
+    auto start = std::find_if_not(str.begin(), str.end(), [](unsigned char ch) { return std::isspace(ch); });
+    return std::string(start, str.end());
+}
+
 DbManager &DbManager::get()
 {
     static DbManager instance;
@@ -162,12 +168,12 @@ std::vector<BarcodeRecord> DbManager::search(const std::string &query_str)
     if(!conn || !conn->connected())
         return records;
 
-    std::string match = "%" + query_str + "%";
-
+    std::string match = "%" + trimStart(query_str) + "%";
     mysqlpp::Query query = conn->query();
     query << "SELECT inventory.* FROM inventory "
-          << "INNER JOIN owners o ON o.id = inventory.owner_id "
-          << "WHERE (inventory.code LIKE " << mysqlpp::quote << match << " OR inventory.name LIKE " << mysqlpp::quote << match << " OR o.name LIKE " << mysqlpp::quote << match << " OR o.room LIKE " << mysqlpp::quote << match << ") ORDER BY inventory.id DESC";
+          << "LEFT JOIN owners o ON o.id = inventory.owner_id "
+          << "WHERE (inventory.code LIKE " << mysqlpp::quote << match << " OR inventory.name LIKE " << mysqlpp::quote << match << " OR o.name LIKE " << mysqlpp::quote << match << " OR o.room LIKE " << mysqlpp::quote << match << ") "
+          << "ORDER BY inventory.id DESC";
     mysqlpp::StoreQueryResult result = query.store();
 
     if(result)
@@ -179,7 +185,7 @@ std::vector<BarcodeRecord> DbManager::search(const std::string &query_str)
             rec.code = row["code"].c_str();
             rec.name = row["name"].c_str();
             rec.type = classification_query(rec.code);
-            rec.owner_id = row["owner_id"];
+            rec.owner_id = row["owner_id"].is_null() ? -1 : row["owner_id"];
             rec.created_at = row["created_at"].c_str();
             rec.owned_at = row["owned_at"].c_str();
             records.push_back(std::move(rec));

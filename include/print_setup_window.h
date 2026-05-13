@@ -41,15 +41,12 @@ protected:
 
     void on_print();
     void on_page_setup();
-    void on_close();
 
-    void on_size_cm_changed();
-    void on_preset_changed();
     void on_prev_page();
     void on_next_page();
     void draw_preview_page();
     void update_status();
-    void update_pagination();
+    void soft_update_state();
     void draw_print_page(const Glib::RefPtr<Gtk::PrintContext> &context, int page_nr);
     void generate_page_content(Cairo::RefPtr<Cairo::Context> cr, int page_nr, double width_pt, double height_pt, bool quality);
 
@@ -70,7 +67,6 @@ protected:
     Gtk::ScrolledWindow m_scroll_preview;
     Gtk::DrawingArea m_bg_area;
 
-    Gtk::SpinButton m_spin_dup;
     Gtk::SpinButton m_spin_width_cm;
     Gtk::SpinButton m_spin_height_cm;
     Gtk::ComboBoxText m_combo_preset;
