@@ -8,11 +8,11 @@ Glib::RefPtr<Gdk::Pixbuf> generate_barcode(const std::string &data, int type, bo
 
     symbol->symbology = type;
     symbol->show_hrt = static_cast<int>(show_text);
-    symbol->dpmm = 150.0f / 25.4f; // DPI
-    symbol->scale = ZBarcode_Scale_From_XdimDp(symbol->symbology, ZBarcode_Default_Xdim(symbol->symbology), symbol->dpmm, nullptr);
+    symbol->dpmm = 12;//150.0f / 25.4f; // DPI
+    symbol->scale = 1;//ZBarcode_Scale_From_XdimDp(symbol->symbology, ZBarcode_Default_Xdim(symbol->symbology), symbol->dpmm, nullptr);
     symbol->height = target_height_pt;
     symbol->whitespace_width = 0;
-    symbol->output_options = BARCODE_BIND | BARCODE_BOX | BOLD_TEXT;
+    //symbol->output_options = BARCODE_BIND_TOP | BOLD_TEXT;
 
     int error = ZBarcode_Encode_and_Buffer(symbol, (unsigned char *) data.c_str(), 0, 0);
     if(error != 0)

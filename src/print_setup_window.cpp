@@ -1,8 +1,9 @@
 #include "print_setup_window.h"
 #include <cairomm/fontface.h>
 #include <cairomm/surface.h>
+#include <cairomm/fontface.h>
 
-const std::vector<LabelPreset> PrintSetupWindow::m_presets = {{"50×30 мм", 5.0, 3.0}, {"40×25 мм", 4.0, 2.5}, {"70×35 мм", 7.0, 3.5}, {"100×50 мм", 10.0, 5.0}, {"Свой вариант", 5.0, 3.0}};
+const std::vector<LabelPreset> PrintSetupWindow::m_presets = { {"40×25 мм", 4.0, 2.5}, {"50×30 мм", 5.0, 3.0}, {"70×35 мм", 7.0, 3.5}, {"100×50 мм", 10.0, 5.0}, {"Свой вариант", 5.0, 3.0}};
 
 PrintSetupWindow::PrintSetupWindow(Gtk::Window &parent)
 {
@@ -71,6 +72,10 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
     int per_page = cols * rows;
     int start_idx = page_nr * per_page;
 
+    int items_on_page = std::min(per_page, (int)m_data.size() - start_idx);
+    if (items_on_page <= 0)
+        return;
+
     if(m_cutline != CutLineType::NONE)
     {
         cr->save();
@@ -78,13 +83,28 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
         cr->set_line_width(0.3);
         cr->set_dash(std::vector<double> {2.0, 2.0}, 0);
 
+        int actual_rows = (items_on_page + cols - 1) / cols;
+
+        auto get_row_cols = [&](int r) {
+            if (r < 0 || r >= actual_rows) return 0;
+            return std::max(0, std::min(cols, items_on_page - r * cols));
+        };
+
+        auto get_col_rows = [&](int c) {
+            if (c < 0 || c >= cols || items_on_page <= c) return 0;
+            return (items_on_page - c - 1) / cols + 1;
+        };
+
         if(m_cutline == CutLineType::HLINE || m_cutline == CutLineType::BOTH)
         {
-            for(int r = 0; r <= rows; ++r)
+            for(int r = 0; r <= actual_rows; ++r)
             {
-                double y = mt + r * (ch / rows);
-                cr->move_to(ml, y);
-                cr->line_to(ml + cw, y);
+                int line_cols = std::max(get_row_cols(r - 1), get_row_cols(r));
+                if (line_cols > 0) {
+                    double y = mt + r * ih_pt;
+                    cr->move_to(ml, y);
+                    cr->line_to(ml + line_cols * iw_pt, y);
+                }
             }
             cr->stroke();
         }
@@ -93,33 +113,76 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
         {
             for(int c = 0; c <= cols; ++c)
             {
-                double x = ml + c * (cw / cols);
-                cr->move_to(x, mt);
-                cr->line_to(x, mt + ch);
+                int line_rows = std::max(get_col_rows(c - 1), get_col_rows(c));
+                if (line_rows > 0) {
+                    double x = ml + c * iw_pt;
+                    cr->move_to(x, mt);
+                    cr->line_to(x, mt + line_rows * ih_pt);
+                }
             }
             cr->stroke();
         }
         cr->restore();
     }
 
-    Gdk::InterpType _interptype = quality ? Gdk::InterpType::HYPER : Gdk::InterpType::NEAREST;
+    Gdk::InterpType _interptype = Gdk::InterpType::NEAREST;
+    double font_size = 10.0;
+    double text_margin = 15.0;
+
     for(int i = 0; i < per_page; ++i)
     {
         int current_idx = start_idx + i;
         if(current_idx >= (int) m_data.size())
             break;
 
-        Glib::RefPtr<Gdk::Pixbuf> barcode_pixbuf = generate_barcode(m_data[current_idx], BARCODE_CODE128, m_chb_show_text.get_active(), (int) m_item_height_cm);
+        bool show_text = m_chb_show_text.get_active();
+        double actual_barcode_h = show_text ? (ih_pt - text_margin) : ih_pt;
+
+        Glib::RefPtr<Gdk::Pixbuf> barcode_pixbuf = generate_barcode(m_data[current_idx], BARCODE_CODE128, false, (int)actual_barcode_h);
 
         if(barcode_pixbuf)
         {
+            double orig_w = barcode_pixbuf->get_width();
+            double orig_h = barcode_pixbuf->get_height();
+            double scale = std::min(iw_pt / orig_w, actual_barcode_h / orig_h);
+
+            int final_w = std::max(1, (int)(orig_w * scale));
+            int final_h = std::max(1, (int)(orig_h * scale));
+
+            Glib::RefPtr<Gdk::Pixbuf> scaled = barcode_pixbuf->scale_simple(final_w, final_h, _interptype);
+
             int c = i % cols;
             int r = i / cols;
-            double x = std::round(ml + c * (cw / cols) + (cw / cols - iw_pt) / 2);
-            double y = std::round(mt + r * (ch / rows) + (ch / rows - ih_pt) / 2);
-            Glib::RefPtr<Gdk::Pixbuf> scaled = barcode_pixbuf->scale_simple((int) iw_pt, (int) ih_pt, _interptype);
+            double cell_x = ml + c * iw_pt;
+            double cell_y = mt + r * ih_pt;
+
+            double x = std::round(cell_x + (iw_pt - final_w) / 2.0);
+            double y;
+
+            if (show_text)
+                y = std::round(cell_y); // Начинаем от верхнего края ячейки (т.к. мы уже вычли место под текст)
+            else
+                y = std::round(cell_y + (ih_pt - final_h) / 2.0);
+
             Gdk::Cairo::set_source_pixbuf(cr, scaled, x, y);
             cr->paint();
+
+            if(show_text)
+            {
+                cr->set_source_rgb(0, 0, 0);
+                cr->select_font_face("Sans", Cairo::ToyFontFace::Slant::NORMAL, Cairo::ToyFontFace::Weight::NORMAL);
+                cr->set_font_size(font_size);
+
+                Cairo::TextExtents extents;
+                cr->get_text_extents(m_data[current_idx], extents);
+
+                // Центрируем текст по реальной ширине наклейки iw_pt
+                double text_x = cell_x + (iw_pt - extents.width) / 2.0;
+                double text_y = y + final_h + extents.height + 4.0;
+
+                cr->move_to(text_x, text_y);
+                cr->show_text(m_data[current_idx]);
+            }
         }
     }
 }
@@ -131,9 +194,8 @@ void PrintSetupWindow::draw_preview_page()
 
     double pw = m_page_setup->get_paper_width(Gtk::Unit::POINTS);
     double ph = m_page_setup->get_paper_height(Gtk::Unit::POINTS);
-
-    auto surf = Cairo::ImageSurface::create(Cairo::Surface::Format::RGB24, (int) pw, (int) ph);
-    auto cr = Cairo::Context::create(surf);
+    Cairo::RefPtr<Cairo::ImageSurface> surf = Cairo::ImageSurface::create(Cairo::Surface::Format::RGB24, (int) pw, (int) ph);
+    Cairo::RefPtr<Cairo::Context> cr = Cairo::Context::create(surf);
 
     generate_page_content(cr, m_page, pw, ph, false);
 
