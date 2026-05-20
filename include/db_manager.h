@@ -14,6 +14,12 @@ struct Owner
     std::string room;
 };
 
+struct MemberFieldData{
+    std::string code;
+    std::string name_ru;
+    std::string name_en;
+};
+
 struct Classification
 {
     std::string short_code;
@@ -64,12 +70,14 @@ public:
     bool create_tables();
     std::vector<Owner> get_owners();
     std::vector<BarcodeRecord> get_all();
-    std::vector<std::string> get_all_code(std::vector<int> ids);
+    std::vector<MemberFieldData> get_all_code(std::vector<int> ids);
     std::vector<BarcodeRecord> search(const std::string &query);
     std::vector<std::shared_ptr<Classification>> get_types();
+    void import_from_str(const std::string filename, char column = ',');
+
     std::shared_ptr<Classification> classification_query(std::string tp);
     bool insert(const BarcodeRecord &rec);
-    bool insert_data(const std::string &type, const std::string &name, int ownerId = -1, int *insertId = nullptr);
+    bool insert_data(const std::string &type, const std::string &name, const std::string &name0 = {}, int ownerId = -1, int *insertId = nullptr);
     bool insert_owner(const std::string &name, const std::string &cabinet, int *insertId = nullptr);
     bool update_data(const BarcodeRecord &rec);
     bool delete_data(int id);

@@ -5,6 +5,7 @@
 #include <gtkmm.h>
 #include <vector>
 
+#include "add_data_window.h"
 #include "zint_barcoder_ritm.h"
 
 enum class CutLineType
@@ -15,20 +16,13 @@ enum class CutLineType
     BOTH
 };
 
-struct LabelPreset
-{
-    Glib::ustring name;
-    double width_cm;
-    double height_cm;
-};
-
 class PrintSetupWindow : public Gtk::Window
 {
 public:
     PrintSetupWindow(Gtk::Window &parent);
     ~PrintSetupWindow() override = default;
 
-    static PrintSetupWindow *show_as(Gtk::Window &parent, std::vector<std::string> data);
+    static PrintSetupWindow *show_as(Gtk::Window &parent, std::vector<MemberFieldData> data);
 
 protected:
     void init_ui();
@@ -67,9 +61,6 @@ protected:
     Gtk::ScrolledWindow m_scroll_preview;
     Gtk::DrawingArea m_bg_area;
 
-    Gtk::SpinButton m_spin_width_cm;
-    Gtk::SpinButton m_spin_height_cm;
-    Gtk::ComboBoxText m_combo_preset;
     Gtk::ComboBoxText m_combo_cutline;
     Gtk::CheckButton m_chb_no_border {"Без полей"};
     Gtk::CheckButton m_chb_show_text {"Показывать текст"};
@@ -85,13 +76,11 @@ protected:
 
     int m_page = 0;
     int m_pages_total = 1;
-    int m_dup = 1;
-    double m_item_width_cm = 5.0;
-    double m_item_height_cm = 5.0;
     CutLineType m_cutline = CutLineType::NONE;
     bool m_updating_preset = false;
-    std::vector<std::string> m_data;
+    std::vector<MemberFieldData> m_data;
 
+    double m_item_width_cm = 7;
+    double m_item_height_cm = 1;
     static constexpr double CM_TO_PT = 28.346;
-    static const std::vector<LabelPreset> m_presets;
 };

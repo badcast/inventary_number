@@ -1,4 +1,9 @@
 #include "db_manager.h"
+
+#include <fstream>
+#include <vector>
+#include <string>
+#include <string.h>
 #include <iostream>
 
 std::vector<std::shared_ptr<Classification>> mClassifications;
@@ -66,11 +71,13 @@ bool DbManager::create_tables()
             updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         );)")
                .execute() &&
-        conn->query(R"(
+           conn->query(R"(
         CREATE TABLE IF NOT EXISTS inventory (
             id           INT AUTO_INCREMENT PRIMARY KEY,
             code         VARCHAR(255) NOT NULL UNIQUE,
             name         VARCHAR(255) NOT NULL,
+            name1        VARCHAR(255),
+            name2        VARCHAR(255),
             owner_id     INT,
             owned_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -78,7 +85,7 @@ bool DbManager::create_tables()
 
             FOREIGN KEY  ownerid_fk(owner_id) REFERENCES owners (id)
         );)")
-            .execute();
+               .execute();
 }
 
 std::vector<Owner> DbManager::get_owners()
@@ -131,14 +138,14 @@ std::vector<BarcodeRecord> DbManager::get_all()
     return records;
 }
 
-std::vector<std::string> DbManager::get_all_code(std::vector<int> ids)
+std::vector<MemberFieldData> DbManager::get_all_code(std::vector<int> ids)
 {
-    std::vector<std::string> records {};
+    std::vector<MemberFieldData> records {};
     if(!conn || !conn->connected())
         return records;
 
     mysqlpp::Query query = conn->query();
-    query << "SELECT code FROM inventory";
+    query << "SELECT code,name,name1 FROM inventory";
     if(!ids.empty())
     {
         query << " WHERE id IN (";
@@ -156,9 +163,13 @@ std::vector<std::string> DbManager::get_all_code(std::vector<int> ids)
     if(!result)
         return records;
 
+    MemberFieldData mfd;
     for(const mysqlpp::Row &row : result)
     {
-        records.push_back(row["code"].c_str());
+        mfd.code = row["code"].c_str();
+        mfd.name_ru = row["name"].c_str();
+        mfd.name_en = row["name1"].c_str();
+        records.push_back(mfd);
     }
     return records;
 }
@@ -199,15 +210,15 @@ std::vector<std::shared_ptr<Classification>> DbManager::get_types()
     if(mClassifications.empty())
     {
         std::vector<Classification> data = {
-            {"MO", "Мед. оборудование", "ЭКГ, УЗИ-аппараты, дефибрилляторы, мониторы пациента."},
-            {"KT", "Компьютерная техника", "Системные блоки, серверы, ноутбуки, планшеты врачей."},
-            {"KP", "Периферия и оргтехника", "Принтеры, сканеры, МФУ, мониторы, ИБП."},
-            {"MB", "Мебель", "Столы, шкафы, медицинские кушетки, тумбы, кровати."},
-            {"HI", "Хоз. инвентарь", "Сейфы, холодильники для лекарств, микроволновки, кондиционеры."},
-            {"VS", "Видеоенаблюдение", "Камеры (IP/аналог), видеорегистраторы."},
-            {"AV", "Аудио-визуальное", "Телевизоры в холлах, проекторы в конференц-залах."},
-            {"TR", "Транспортировка", "Кресла-каталки, носилки, тележки для инструментов."},
-            {"IT", "Расходные (дорогие)", "Специальные эргономичные мыши, сложные датчики (если нужен поштучный учет)."}};
+                                             {"MO", "Мед. оборудование", "ЭКГ, УЗИ-аппараты, дефибрилляторы, мониторы пациента."},
+                                             {"KT", "Компьютерная техника", "Системные блоки, серверы, ноутбуки, планшеты врачей."},
+                                             {"KP", "Периферия и оргтехника", "Принтеры, сканеры, МФУ, мониторы, ИБП."},
+                                             {"MB", "Мебель", "Столы, шкафы, медицинские кушетки, тумбы, кровати."},
+                                             {"HI", "Хоз. инвентарь", "Сейфы, холодильники для лекарств, микроволновки, кондиционеры."},
+                                             {"VS", "Видеоенаблюдение", "Камеры (IP/аналог), видеорегистраторы."},
+                                             {"AV", "Аудио-визуальное", "Телевизоры в холлах, проекторы в конференц-залах."},
+                                             {"TR", "Транспортировка", "Кресла-каталки, носилки, тележки для инструментов."},
+                                             {"IT", "Расходные (дорогие)", "Специальные эргономичные мыши, сложные датчики (если нужен поштучный учет)."}};
 
         mClassifications.reserve(data.size());
 
@@ -215,6 +226,56 @@ std::vector<std::shared_ptr<Classification>> DbManager::get_types()
     }
 
     return mClassifications;
+}
+
+void DbManager::import_from_str(const std::string filename, char column)
+{
+    std::ifstream ifile(filename);
+    if (!ifile.is_open()) return;
+
+    struct t {
+        std::string name0;
+        std::string name1;
+        int c = 0;
+    } t0;
+
+    std::string line;
+    std::vector<t> __i;
+
+    while (std::getline(ifile, line)) {
+        if (line.empty()) continue;
+
+        int iid = 0;
+        int lhs = 0;
+        t0 = {};
+
+        for (int i = 0; i <= line.size(); ++i) {
+            if (i == line.size() || line[i] == column) {
+                int len = i - lhs;
+
+                if (iid == 0) {
+                    t0.name0 = line.substr(lhs, len);
+                } else if (iid == 1) {
+                    t0.name1 = line.substr(lhs, len);
+                } else if (iid == 2) {
+                    t0.c = std::stoi(line.substr(lhs, len));
+                }
+
+                lhs = i + 1;
+                iid++;
+            }
+        }
+        __i.push_back(t0);
+    }
+    ifile.close();
+
+    for(const t& tt : __i)
+    {
+        for(int i =0; i < tt.c; ++i)
+        {
+            insert_data("MO", tt.name1, tt.name0);
+        }
+    }
 }
 
 std::shared_ptr<Classification> DbManager::classification_query(std::string tp)
@@ -247,7 +308,7 @@ bool DbManager::insert(const BarcodeRecord &rec)
     return query.execute(rec.code.c_str());
 }
 
-bool DbManager::insert_data(const std::string &type, const std::string &name, int ownerId, int *insertId)
+bool DbManager::insert_data(const std::string &type, const std::string &name, const std::string &name0, int ownerId, int *insertId)
 {
     if(!conn || !conn->connected() || type.length() != 2 || name.length() < 3)
         return false;
@@ -271,14 +332,26 @@ bool DbManager::insert_data(const std::string &type, const std::string &name, in
 
     query.reset();
 
-    query << "INSERT INTO inventory (code,name,owner_id) VALUES (" << mysqlpp::quote << nextCode << ", " << mysqlpp::quote << name << ", ";
+    query << "INSERT INTO inventory "
+             "(code,name,name1,owner_id) VALUES (" << mysqlpp::quote << nextCode << ", " << mysqlpp::quote << name;
+    query << ", ";
+    if(!name0.empty())
+        query << mysqlpp::quote << name0;
+    else
+        query << mysqlpp::quote << "";
+
+    query << ",";
+
     if(ownerId == -1)
         query << "NULL";
     else
         query << ownerId;
+
     query << ")";
+
     if(!query.execute())
     {
+        std::cerr << "Query failed: " << query.error() << std::endl;
         return false;
     }
 

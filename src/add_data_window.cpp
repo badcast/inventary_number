@@ -93,7 +93,7 @@ void AddDataWindow::on_save_clicked()
         target_owner_id = std::clamp(target_owner_id, -1, std::numeric_limits<int>::max());
     }
 
-    if(!DbManager::get().insert_data(DbManager::get().get_types()[target_type_id]->short_code, m_entry_name.get_text(), target_owner_id, &insert_id))
+    if(!DbManager::get().insert_data(DbManager::get().get_types()[target_type_id]->short_code, m_entry_name.get_text(), {}, target_owner_id, &insert_id))
     {
         show_error("Ошибка. Ошибка базы данных.");
         return;

@@ -1,9 +1,7 @@
 #include "print_setup_window.h"
 #include <cairomm/fontface.h>
 #include <cairomm/surface.h>
-#include <cairomm/fontface.h>
-
-const std::vector<LabelPreset> PrintSetupWindow::m_presets = { {"40×25 мм", 4.0, 2.5}, {"50×30 мм", 5.0, 3.0}, {"70×35 мм", 7.0, 3.5}, {"100×50 мм", 10.0, 5.0}, {"Свой вариант", 5.0, 3.0}};
+#include <sstream>
 
 PrintSetupWindow::PrintSetupWindow(Gtk::Window &parent)
 {
@@ -31,7 +29,7 @@ PrintSetupWindow::PrintSetupWindow(Gtk::Window &parent)
     init_print();
 }
 
-PrintSetupWindow *PrintSetupWindow::show_as(Gtk::Window &parent, std::vector<std::string> data)
+PrintSetupWindow *PrintSetupWindow::show_as(Gtk::Window &parent, std::vector<MemberFieldData> data)
 {
     if(data.empty())
     {
@@ -48,7 +46,6 @@ PrintSetupWindow *PrintSetupWindow::show_as(Gtk::Window &parent, std::vector<std
     window->present();
     return window;
 }
-
 void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, int page_nr, double width_pt, double height_pt, bool quality)
 {
     if(m_data.empty())
@@ -67,8 +64,8 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
     double iw_pt = m_item_width_cm * CM_TO_PT;
     double ih_pt = m_item_height_cm * CM_TO_PT;
 
-    int cols = std::max(1, (int) (cw / iw_pt));
-    int rows = std::max(1, (int) (ch / ih_pt));
+    int cols = std::max(1, (int)(cw / iw_pt));
+    int rows = std::max(1, (int)(ch / ih_pt));
     int per_page = cols * rows;
     int start_idx = page_nr * per_page;
 
@@ -76,6 +73,7 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
     if (items_on_page <= 0)
         return;
 
+    // Отрисовка линий обреза
     if(m_cutline != CutLineType::NONE)
     {
         cr->save();
@@ -126,25 +124,89 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
     }
 
     Gdk::InterpType _interptype = Gdk::InterpType::NEAREST;
-    double font_size = 10.0;
-    double text_margin = 15.0;
+
+    // --- ДИНАМИЧЕСКИЙ РАСЧЕТ ПРОПОРЦИЙ ---
+    double barcode_area_w = iw_pt * 0.6;
+    double text_area_w = iw_pt - barcode_area_w;
+
+    // Динамический размер шрифта: около 12% от высоты этикетки, но не меньше 4pt
+    double dynamic_font_size = std::max(4.0, ih_pt * 0.12);
+    double code_font_size = std::max(4.0, dynamic_font_size * 0.85); // Код чуть мельче основного текста
+    double line_height_ru = dynamic_font_size * 1.25;
+    double line_height_en = dynamic_font_size * 1.15;
+
+    auto fit_string = [&](std::string text, double max_w) -> std::string {
+        Cairo::TextExtents ext;
+        cr->get_text_extents(text, ext);
+        if (ext.width <= max_w) return text;
+
+        Glib::ustring ustr(text);
+        std::string suffix = "...";
+
+        while (ustr.length() > 0) {
+            cr->get_text_extents(ustr.raw() + suffix, ext);
+            if (ext.width <= max_w) break;
+            ustr = ustr.substr(0, ustr.length() - 1);
+        }
+        return ustr.raw() + suffix;
+    };
+
+    auto wrap_text = [&](const std::string& text, double max_w) -> std::vector<std::string> {
+        std::vector<std::string> lines;
+        std::string current_line;
+        std::istringstream words_stream(text);
+        std::string word;
+
+        while (words_stream >> word) {
+            if (current_line.empty()) {
+                current_line = word;
+            } else {
+                std::string test_line = current_line + " " + word;
+                Cairo::TextExtents ext;
+                cr->get_text_extents(test_line, ext);
+                if (ext.width > max_w) {
+                    lines.push_back(current_line);
+                    current_line = word;
+                } else {
+                    current_line = test_line;
+                }
+            }
+        }
+        if (!current_line.empty()) {
+            lines.push_back(current_line);
+        }
+
+        for (auto& line : lines) {
+            Cairo::TextExtents ext;
+            cr->get_text_extents(line, ext);
+            if (ext.width > max_w) {
+                line = fit_string(line, max_w);
+            }
+        }
+        return lines;
+    };
 
     for(int i = 0; i < per_page; ++i)
     {
-        int current_idx = start_idx + i;
-        if(current_idx >= (int) m_data.size())
+        int idx = start_idx + i;
+        if(idx >= (int)m_data.size())
             break;
 
         bool show_text = m_chb_show_text.get_active();
-        double actual_barcode_h = show_text ? (ih_pt - text_margin) : ih_pt;
 
-        Glib::RefPtr<Gdk::Pixbuf> barcode_pixbuf = generate_barcode(m_data[current_idx], BARCODE_CODE128, false, (int)actual_barcode_h);
+        // Высота штрихкода: оставляем место внизу под подпись кода
+        double text_margin = code_font_size * 2.0;
+        double actual_barcode_h = show_text ? std::max(9.0, ih_pt - text_margin) : ih_pt;
+
+        Glib::RefPtr<Gdk::Pixbuf> barcode_pixbuf = generate_barcode(m_data[idx].code, BARCODE_CODE128, false, (int)actual_barcode_h);
 
         if(barcode_pixbuf)
         {
             double orig_w = barcode_pixbuf->get_width();
             double orig_h = barcode_pixbuf->get_height();
-            double scale = std::min(iw_pt / orig_w, actual_barcode_h / orig_h);
+
+            double max_b_w = show_text ? (barcode_area_w - 4.0) : (iw_pt - 4.0);
+            double scale = std::min(max_b_w / orig_w, actual_barcode_h / orig_h);
 
             int final_w = std::max(1, (int)(orig_w * scale));
             int final_h = std::max(1, (int)(orig_h * scale));
@@ -156,32 +218,89 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
             double cell_x = ml + c * iw_pt;
             double cell_y = mt + r * ih_pt;
 
-            double x = std::round(cell_x + (iw_pt - final_w) / 2.0);
-            double y;
+            double area_w = show_text ? barcode_area_w : iw_pt;
+            double bx = std::round(cell_x + (area_w - final_w) / 2.0);
+            double by = show_text ? std::round(cell_y) : std::round(cell_y + (ih_pt - final_h) / 2.0);
 
-            if (show_text)
-                y = std::round(cell_y); // Начинаем от верхнего края ячейки (т.к. мы уже вычли место под текст)
-            else
-                y = std::round(cell_y + (ih_pt - final_h) / 2.0);
-
-            Gdk::Cairo::set_source_pixbuf(cr, scaled, x, y);
+            cr->save();
+            cr->set_antialias(Cairo::Antialias::ANTIALIAS_NONE);
+            Gdk::Cairo::set_source_pixbuf(cr, scaled, bx, by);
             cr->paint();
+            cr->restore();
 
             if(show_text)
             {
                 cr->set_source_rgb(0, 0, 0);
+
+                // 1. Отрисовка ID кода под штрихкодом
+                cr->select_font_face("Sans", Cairo::ToyFontFace::Slant::NORMAL, Cairo::ToyFontFace::Weight::BOLD);
+                cr->set_font_size(code_font_size);
+
+                std::string code_str = m_data[idx].code;
+                code_str = fit_string(code_str, max_b_w);
+                Cairo::TextExtents ext_code;
+                cr->get_text_extents(code_str, ext_code);
+
+                double tx_code = cell_x + std::max(2.0, (barcode_area_w - ext_code.width) / 2.0);
+                double ty_code = by + final_h + ext_code.height + (code_font_size * 0.3);
+
+                cr->move_to(tx_code, ty_code);
+                cr->show_text(code_str);
+
+                // --- НАСТРОЙКИ ПРАВОГО БЛОКА ---
+                double padding = 3.0;
+                double text_start_x = cell_x + barcode_area_w + padding;
+                double allowed_text_w = text_area_w - (padding * 2.0);
+
+                // Стартовая позиция по Y зависит от размера шрифта
+                double current_y = cell_y + dynamic_font_size * 1.2;
+
+                // 2. Отрисовка RU описания
                 cr->select_font_face("Sans", Cairo::ToyFontFace::Slant::NORMAL, Cairo::ToyFontFace::Weight::NORMAL);
-                cr->set_font_size(font_size);
+                cr->set_font_size(dynamic_font_size);
 
-                Cairo::TextExtents extents;
-                cr->get_text_extents(m_data[current_idx], extents);
+                std::vector<std::string> ru_lines = wrap_text(m_data[idx].name_ru, allowed_text_w);
 
-                // Центрируем текст по реальной ширине наклейки iw_pt
-                double text_x = cell_x + (iw_pt - extents.width) / 2.0;
-                double text_y = y + final_h + extents.height + 4.0;
+                for (size_t l = 0; l < ru_lines.size() && l < 4; ++l) {
+                    cr->move_to(text_start_x, current_y);
+                    cr->show_text(ru_lines[l]);
+                    current_y += line_height_ru;
+                }
 
-                cr->move_to(text_x, text_y);
-                cr->show_text(m_data[current_idx]);
+                // 3. Горизонтальный разделитель
+                current_y -= line_height_ru * 0.3; // Корректировка, чтобы линия встала по центру между блоками
+                cr->set_line_width(0.3);
+                cr->move_to(text_start_x, current_y);
+                cr->line_to(cell_x + iw_pt - padding, current_y);
+                cr->stroke();
+
+                current_y += line_height_ru * 0.8;
+
+                // 4. Отрисовка EN описания
+                if (!m_data[idx].name_en.empty()) {
+                    cr->set_font_size(dynamic_font_size * 0.9); // EN текст немного меньше RU текста
+                    std::vector<std::string> en_lines = wrap_text(m_data[idx].name_en, allowed_text_w);
+
+                    for (size_t l = 0; l < en_lines.size() && l < 3; ++l) {
+                        cr->move_to(text_start_x, current_y);
+                        cr->show_text(en_lines[l]);
+                        current_y += line_height_en;
+                    }
+                }
+
+                double company_font_size = std::max(3.5, dynamic_font_size * 0.7);
+                cr->select_font_face("Sans", Cairo::ToyFontFace::Slant::NORMAL, Cairo::ToyFontFace::Weight::BOLD);
+                cr->set_font_size(company_font_size);
+
+                std::string company_txt = "ТОО \"RITM-MEDICAL-CENTER\"";
+                Cairo::TextExtents ext_company;
+                cr->get_text_extents(company_txt, ext_company);
+
+                text_start_x = cell_x + iw_pt - ext_company.width - padding;
+                current_y = cell_y + ih_pt - padding;
+
+                cr->move_to(text_start_x, current_y);
+                cr->show_text(company_txt);
             }
         }
     }
@@ -194,7 +313,7 @@ void PrintSetupWindow::draw_preview_page()
 
     double pw = m_page_setup->get_paper_width(Gtk::Unit::POINTS);
     double ph = m_page_setup->get_paper_height(Gtk::Unit::POINTS);
-    Cairo::RefPtr<Cairo::ImageSurface> surf = Cairo::ImageSurface::create(Cairo::Surface::Format::RGB24, (int) pw, (int) ph);
+    Cairo::RefPtr<Cairo::ImageSurface> surf = Cairo::ImageSurface::create(Cairo::Surface::Format::RGB24, (int)pw, (int)ph);
     Cairo::RefPtr<Cairo::Context> cr = Cairo::Context::create(surf);
 
     generate_page_content(cr, m_page, pw, ph, false);
@@ -203,7 +322,7 @@ void PrintSetupWindow::draw_preview_page()
     m_preview_page.set_pixbuf(pixbuf_preview);
 
     double scale_factor = 0.5;
-    m_preview_frame.set_size_request((int) (pw * scale_factor), (int) (ph * scale_factor));
+    m_preview_frame.set_size_request((int)(pw * scale_factor), (int)(ph * scale_factor));
 
     m_lbl_page.set_text("Стр. " + std::to_string(m_page + 1) + " из " + std::to_string(m_pages_total));
     m_btn_prev.set_sensitive(m_page > 0);
@@ -291,45 +410,12 @@ void PrintSetupWindow::init_ui()
     m_right_box.set_margin(12);
     m_right_box.set_vexpand(true);
     m_right_box.set_spacing(12);
-    m_spin_width_cm.set_value(m_item_width_cm);
-    m_spin_height_cm.set_value(m_item_height_cm);
     m_combo_cutline.set_active(0);
 
     auto lbl_settings = Gtk::make_managed<Gtk::Label>("Настройки");
     lbl_settings->add_css_class("title-4");
     lbl_settings->set_halign(Gtk::Align::START);
     m_right_box.append(*lbl_settings);
-
-    auto box_preset = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::VERTICAL, 3);
-    auto lbl_preset = Gtk::make_managed<Gtk::Label>("Размер наклейки:");
-    lbl_preset->set_xalign(0);
-    box_preset->append(*lbl_preset);
-
-    for(const LabelPreset &p : m_presets)
-        m_combo_preset.append(p.name);
-    m_combo_preset.set_active(0);
-    m_combo_preset.signal_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
-    box_preset->append(m_combo_preset);
-    m_controls.append(*box_preset);
-
-    auto box_size = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::HORIZONTAL, 6);
-    m_spin_width_cm.set_range(1.0, 20.0);
-    m_spin_width_cm.set_digits(1);
-    m_spin_width_cm.set_increments(0.1, 1.0);
-    m_spin_width_cm.set_width_chars(5);
-    m_spin_width_cm.signal_value_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
-    box_size->append(m_spin_width_cm);
-
-    box_size->append(*Gtk::make_managed<Gtk::Label>("×"));
-
-    m_spin_height_cm.set_range(1.0, 20.0);
-    m_spin_height_cm.set_digits(1);
-    m_spin_height_cm.set_increments(0.1, 1.0);
-    m_spin_height_cm.set_width_chars(5);
-    m_spin_height_cm.signal_value_changed().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
-    box_size->append(m_spin_height_cm);
-    box_size->append(*Gtk::make_managed<Gtk::Label>("см"));
-    m_controls.append(*box_size);
 
     auto box_cut = Gtk::make_managed<Gtk::Box>(Gtk::Orientation::VERTICAL, 3);
     auto lbl_cut = Gtk::make_managed<Gtk::Label>("Линии обрезки:");
@@ -499,29 +585,18 @@ void PrintSetupWindow::soft_update_state()
     double iw_pt = m_item_width_cm * CM_TO_PT;
     double ih_pt = m_item_height_cm * CM_TO_PT;
 
-    int cols = std::max(1, (int) (cw / iw_pt));
-    int rows = std::max(1, (int) (ch / ih_pt));
+    int cols = std::max(1, (int)(cw / iw_pt));
+    int rows = std::max(1, (int)(ch / ih_pt));
     int per_page = cols * rows;
 
     m_cutline = static_cast<CutLineType>(m_combo_cutline.get_active_row_number());
-    int idx = m_combo_preset.get_active_row_number();
 
-    if(idx >= 0 && idx < (int) m_presets.size() - 1)
-    {
-        m_item_width_cm = m_presets[idx].width_cm;
-        m_item_height_cm = m_presets[idx].height_cm;
-        m_spin_width_cm.set_value(m_item_width_cm);
-        m_spin_height_cm.set_value(m_item_height_cm);
-    }
-    else
-        m_combo_preset.set_active(m_presets.size() - 1);
+    m_pages_total = std::max(1, (int)std::ceil((double)m_data.size() / per_page));
 
-    m_item_width_cm = m_spin_width_cm.get_value();
-    m_item_height_cm = m_spin_height_cm.get_value();
-
-    m_pages_total = std::max(1, (int) std::ceil((double) m_dup / per_page));
     if(m_page >= m_pages_total)
         m_page = m_pages_total - 1;
+    if(m_page < 0)
+        m_page = 0;
 
     m_updating_preset = false;
     update_status();
@@ -551,5 +626,5 @@ void PrintSetupWindow::update_status()
 {
     m_statusbar.pop(0);
     auto orient = m_page_setup->get_orientation() == Gtk::PageOrientation::PORTRAIT ? "Книжная" : "Альбомная";
-    m_statusbar.push("Объектов: " + std::to_string(m_dup) + " | Размер: " + std::to_string(m_item_width_cm) + "×" + std::to_string(m_item_height_cm) + "см" + " | " + orient, 0);
+    m_statusbar.push("Объектов: " + std::to_string(m_data.size()) + " | Размер: " + std::to_string(m_item_width_cm) + "×" + std::to_string(m_item_height_cm) + "см" + " | " + orient, 0);
 }

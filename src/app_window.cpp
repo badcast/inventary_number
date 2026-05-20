@@ -217,7 +217,7 @@ void AppWindow::update_connection_status(bool connected)
 
 void AppWindow::print_setup()
 {
-    std::vector<std::string> objects {};
+    std::vector<MemberFieldData> objects {};
     std::vector<int> ids {};
     Glib::RefPtr<const Gtk::TreeSelection> selection = m_tree_view.get_selection();
     std::vector<Gtk::TreeModel::Path> selected_paths = selection->get_selected_rows();
