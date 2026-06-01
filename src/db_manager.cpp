@@ -8,6 +8,29 @@
 
 std::vector<std::shared_ptr<Classification>> mClassifications;
 
+std::vector<std::shared_ptr<Classification>> DbManager::get_types()
+{
+    if(mClassifications.empty())
+    {
+        std::vector<Classification> data = {
+                                             {"MO", "Мед. оборудование", "ЭКГ, УЗИ-аппараты, дефибрилляторы, мониторы пациента."},
+                                             {"KT", "Компьютерная техника", "Системные блоки, серверы, ноутбуки, планшеты врачей."},
+                                             {"KP", "Периферия и оргтехника", "Принтеры, сканеры, МФУ, мониторы, ИБП."},
+                                             {"MB", "Мебель", "Столы, шкафы, медицинские кушетки, тумбы, кровати."},
+                                             {"HI", "Хоз. инвентарь", "Сейфы, холодильники для лекарств, микроволновки, кондиционеры."},
+                                             {"VS", "Видеоенаблюдение", "Камеры (IP/аналог), видеорегистраторы."},
+                                             {"AV", "Аудио-визуальное", "Телевизоры в холлах, проекторы в конференц-залах."},
+                                             {"TR", "Транспортировка", "Кресла-каталки, носилки, тележки для инструментов."},
+                                             {"IT", "Расходные (дорогие)", "Специальные эргономичные мыши, сложные датчики (если нужен поштучный учет)."}};
+
+        mClassifications.reserve(data.size());
+
+        std::transform(std::make_move_iterator(data.begin()), std::make_move_iterator(data.end()), std::back_inserter(mClassifications), [](Classification &&c) { return std::make_shared<Classification>(std::move(c)); });
+    }
+
+    return mClassifications;
+}
+
 inline std::string toLower(std::string str)
 {
     std::transform(std::begin(str), std::end(str), std::begin(str), [](unsigned char c) { return std::tolower(c); });
@@ -205,30 +228,8 @@ std::vector<BarcodeRecord> DbManager::search(const std::string &query_str)
 
     return records;
 }
-std::vector<std::shared_ptr<Classification>> DbManager::get_types()
-{
-    if(mClassifications.empty())
-    {
-        std::vector<Classification> data = {
-                                             {"MO", "Мед. оборудование", "ЭКГ, УЗИ-аппараты, дефибрилляторы, мониторы пациента."},
-                                             {"KT", "Компьютерная техника", "Системные блоки, серверы, ноутбуки, планшеты врачей."},
-                                             {"KP", "Периферия и оргтехника", "Принтеры, сканеры, МФУ, мониторы, ИБП."},
-                                             {"MB", "Мебель", "Столы, шкафы, медицинские кушетки, тумбы, кровати."},
-                                             {"HI", "Хоз. инвентарь", "Сейфы, холодильники для лекарств, микроволновки, кондиционеры."},
-                                             {"VS", "Видеоенаблюдение", "Камеры (IP/аналог), видеорегистраторы."},
-                                             {"AV", "Аудио-визуальное", "Телевизоры в холлах, проекторы в конференц-залах."},
-                                             {"TR", "Транспортировка", "Кресла-каталки, носилки, тележки для инструментов."},
-                                             {"IT", "Расходные (дорогие)", "Специальные эргономичные мыши, сложные датчики (если нужен поштучный учет)."}};
 
-        mClassifications.reserve(data.size());
-
-        std::transform(std::make_move_iterator(data.begin()), std::make_move_iterator(data.end()), std::back_inserter(mClassifications), [](Classification &&c) { return std::make_shared<Classification>(std::move(c)); });
-    }
-
-    return mClassifications;
-}
-
-void DbManager::import_from_str(const std::string filename, char column)
+void DbManager::import_from_str(const std::string type, const std::string filename, int group, char column)
 {
     std::ifstream ifile(filename);
     if (!ifile.is_open()) return;
@@ -273,7 +274,7 @@ void DbManager::import_from_str(const std::string filename, char column)
     {
         for(int i =0; i < tt.c; ++i)
         {
-            insert_data("MO", tt.name1, tt.name0);
+            insert_data(type, tt.name1, tt.name0, -1, nullptr, group);
         }
     }
 }
@@ -308,7 +309,7 @@ bool DbManager::insert(const BarcodeRecord &rec)
     return query.execute(rec.code.c_str());
 }
 
-bool DbManager::insert_data(const std::string &type, const std::string &name, const std::string &name0, int ownerId, int *insertId)
+bool DbManager::insert_data(const std::string &type, const std::string &name, const std::string &name0, int ownerId, int *insertId, int group)
 {
     if(!conn || !conn->connected() || type.length() != 2 || name.length() < 3)
         return false;
@@ -333,7 +334,7 @@ bool DbManager::insert_data(const std::string &type, const std::string &name, co
     query.reset();
 
     query << "INSERT INTO inventory "
-             "(code,name,name1,owner_id) VALUES (" << mysqlpp::quote << nextCode << ", " << mysqlpp::quote << name;
+             "(code,name,name1,owner_id,type) VALUES (" << mysqlpp::quote << nextCode << ", " << mysqlpp::quote << name;
     query << ", ";
     if(!name0.empty())
         query << mysqlpp::quote << name0;
@@ -346,6 +347,8 @@ bool DbManager::insert_data(const std::string &type, const std::string &name, co
         query << "NULL";
     else
         query << ownerId;
+
+    query << "," << group;
 
     query << ")";
 
@@ -387,6 +390,68 @@ bool DbManager::update_data(const BarcodeRecord &rec)
     mysqlpp::Query query = conn->query("UPDATE inventory SET code=%0q WHERE id=%1");
     query.parse();
     return query.execute(rec.code, rec.id);
+}
+
+bool DbManager::update_image(int id, Glib::RefPtr<Gdk::Pixbuf> picture)
+{
+    if(!conn || !conn->connected() || !picture)
+        return false;
+
+    gchar * buffer=  nullptr;
+    gsize buffer_size = 0;
+    try
+    {
+        picture->save_to_buffer(buffer,buffer_size, "jpeg");
+    } catch (...)
+    {
+        return false;
+    }
+
+    mysqlpp::sql_blob blob(buffer, buffer_size);
+    mysqlpp::Query query = conn->query("INSERT INTO images (data) VALUES (%0q)");
+    query.parse();
+
+    mysqlpp::SimpleResult result = query.execute(blob);
+
+    if(!result)
+    {
+        g_free(buffer);
+        return false;
+    }
+
+    query.reset();
+    query = conn->query("UPDATE inventory SET image_id = %0 WHERE id = %1");
+    query.parse();
+    query.execute(result.insert_id(), id);
+
+    return result;
+}
+
+Glib::RefPtr<Gdk::Pixbuf> DbManager::get_image(int id)
+{
+    Glib::RefPtr<Gdk::Pixbuf> result {};
+
+    if(!conn || !conn->connected())
+        return result;
+
+    mysqlpp::Query query = conn->query("SELECT g.data AS data FROM inventory i LEFT JOIN images g ON g.id = i.image_id WHERE i.id=%0");
+    query.parse();
+    mysqlpp::StoreQueryResult res = query.store(id);
+
+    if(res && res.num_rows() > 0)
+    {
+        mysqlpp::Row row = res[0];
+        if(!row["data"].is_null())
+        {
+            mysqlpp::String blob_data = row["data"];
+            Glib::RefPtr<Gdk::PixbufLoader> loader = Gdk::PixbufLoader::create();
+            loader->write(reinterpret_cast<const guint8*>(blob_data.data()), blob_data.size());
+            loader->close();
+            result = loader->get_pixbuf();
+        }
+    }
+
+    return result;
 }
 
 bool DbManager::delete_data(int id)

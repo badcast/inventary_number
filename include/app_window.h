@@ -24,6 +24,7 @@ private:
     void on_refresh();
     void update_connection_status(bool connected);
     void print_setup();
+    void image_load_and_shown();
 
     void display_image(const Glib::RefPtr<Gdk::Pixbuf> &refPixBuf);
 
@@ -40,6 +41,8 @@ private:
     Gtk::Button m_btn_print {"Распечатать"};
 
     Gtk::Picture m_preview_picture;
+    Gtk::Label m_preview_label;
+    Gtk::Button m_btn_load_img {"Открыть изо"};
 
     Gtk::Box m_search_box {Gtk::Orientation::HORIZONTAL};
     Gtk::Entry m_search_entry;

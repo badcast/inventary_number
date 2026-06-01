@@ -55,6 +55,13 @@ void AppWindow::setup_ui()
     m_preview_picture.set_size_request(100, 100);
     m_left_box.append(m_preview_picture);
 
+    m_preview_label.set_label("< No image >");
+    m_preview_label.set_visible(false);
+    m_left_box.append(m_preview_label);
+
+    m_btn_load_img.set_label("Загрузить изображ.");
+    m_left_box.append(m_btn_load_img);
+
     m_right_box.append(m_search_box);
     m_search_entry.set_hexpand(true);
     m_search_entry.set_placeholder_text("Введите запрос для поиска: Например, Иван");
@@ -87,45 +94,29 @@ void AppWindow::setup_actions()
     m_btn_add_owner.signal_clicked().connect([this]() { AddOwnerWindow::show_as(*this); });
     m_btn_print.signal_clicked().connect(sigc::mem_fun(*this, &AppWindow::print_setup));
     m_btn_refresh.signal_clicked().connect(sigc::mem_fun(*this, &AppWindow::on_refresh));
+    m_btn_load_img.signal_clicked().connect(sigc::mem_fun(*this, &AppWindow::image_load_and_shown));
+    m_tree_view.signal_cursor_changed().connect([this](){
+        int id = -1;
+        Glib::RefPtr<Gdk::Pixbuf> image;
+        std::vector<Gtk::TreeModel::Path>  rows = m_tree_view.get_selection()->get_selected_rows();
+        if(!rows.empty())
+        {
+            Gtk::TreeModel::iterator iter = m_list_model->get_iter(rows[0]);
+            if(iter)
+            {
+                Gtk::TreeModel::Row row = *iter;
+                id = row[m_data_columns.col_id];
+                image = DbManager::get().get_image(id);
+            }
+        }
+        display_image(image);
+    });
     m_search_entry.signal_changed().connect(sigc::mem_fun(*this, &AppWindow::on_search_changed));
 }
 
-// void AppWindow::on_generate()
-// {
-//     int ownerSelected=-1;
-//     int insertId;
-
-//     std::string data = m_current_record.code;
-
-//     display_image({});
-//     if(data.empty())
-//     {
-//         if(DbManager::insert_type(m_current_record.type->short_code,ownerSelected,&insertId))
-//             return;
-
-//         int next_id = DbManager::get().get_next_auto_id();
-
-//         int sel_model = m_typed_class_combo.get_active_row_number();
-//         if(sel_model == -1)
-//             return;
-
-//         data = DbManager::get().get_types()[sel_model]->short_code + std::string(8 - std::to_string(next_id).length(), '0') + std::to_string(next_id);
-//         m_code_label.set_text( data);
-//     }
-
-//     int error;
-//     std::vector<unsigned char> m_current_image;
-//     generate_barcode(data, get_symbology(m_type_combo.get_active_text()), error, m_current_image);
-//     if(error != 0)
-//     {
-//         return;
-//     }
-
-//     display_image(m_current_image);
-// }
-
 void AppWindow::display_image(const Glib::RefPtr<Gdk::Pixbuf> &refPixBuf)
 {
+    m_preview_label.set_visible(true);
     if(!refPixBuf)
     {
         m_preview_picture.set_paintable(nullptr);
@@ -133,6 +124,7 @@ void AppWindow::display_image(const Glib::RefPtr<Gdk::Pixbuf> &refPixBuf)
     }
     auto texture = Gdk::Texture::create_for_pixbuf(refPixBuf);
     m_preview_picture.set_paintable(texture);
+    m_preview_label.set_visible(false);
 }
 
 void AppWindow::load_table()
@@ -201,12 +193,12 @@ void AppWindow::update_connection_status(bool connected)
 {
     if(connected)
     {
-        m_status_label.set_text("[+] MySQL подключен");
+        m_status_label.set_text("[+] База подключен");
         m_status_label.set_name("connected");
     }
     else
     {
-        m_status_label.set_text("[-] MySQL отключен");
+        m_status_label.set_text("[-] База отключен");
         m_status_label.set_name("disconnected");
     }
 
@@ -234,4 +226,46 @@ void AppWindow::print_setup()
 
     objects = DbManager::get().get_all_code(std::move(ids));
     PrintSetupWindow::show_as(*this, std::move(objects));
+}
+
+void AppWindow::image_load_and_shown()
+{
+    auto dialog = Gtk::FileDialog::create();
+    dialog->set_title("Выберите изображение...");
+
+    auto filters = Gio::ListStore<Gtk::FileFilter>::create();
+    auto filter_image = Gtk::FileFilter::create();
+    filter_image->set_name("Изображения");
+    filter_image->add_pixbuf_formats();
+    filters->append(filter_image);
+    dialog->set_filters(filters);
+
+    dialog->open(*this, [this, dialog](Glib::RefPtr<Gio::AsyncResult>& result) {
+        try {
+            // Получаем выбранный файл
+            auto file = dialog->open_finish(result);
+            if (file) {
+                std::string path = file->get_path();
+
+                int id = -1;
+                Glib::RefPtr<Gdk::Pixbuf> image = Gdk::Pixbuf::create_from_file(path);
+                std::vector<Gtk::TreeModel::Path> rows = m_tree_view.get_selection()->get_selected_rows();
+                if(!rows.empty())
+                {
+                    Gtk::TreeModel::iterator iter = m_list_model->get_iter(rows[0]);
+                    if(iter)
+                    {
+                        Gtk::TreeModel::Row row = *iter;
+                        id = row[m_data_columns.col_id];
+                        DbManager::get().update_image(id, image);
+                        display_image(image);
+                    }
+                }
+            }
+        } catch (const Gtk::DialogError& err) {
+            // Пользователь нажал "Отмена" или закрыл окно (это нормально)
+        } catch (const Glib::Error& err) {
+            // Ошибка чтения файла
+        }
+    });
 }
