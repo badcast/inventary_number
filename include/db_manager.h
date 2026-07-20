@@ -38,6 +38,7 @@ struct BarcodeRecord
 {
     int id = 0;
     int owner_id;
+    int image_id;
     std::string code;
     std::string name;
     std::shared_ptr<Classification> type;
@@ -80,10 +81,11 @@ public:
 
     std::shared_ptr<Classification> classification_query(std::string tp);
     bool insert(const BarcodeRecord &rec);
-    bool insert_data(const std::string &type, const std::string &name, const std::string &name0 = {}, int ownerId = -1, int *insertId = nullptr, int group = 0);
+    bool insert_data(const std::string &type, const std::string &name, const std::string &name0 = {}, int ownerId = -1, int *insertId = nullptr, int group = 0, int imageId = -1);
     bool insert_owner(const std::string &name, const std::string &cabinet, int *insertId = nullptr);
     bool update_data(const BarcodeRecord &rec);
     bool update_image(int id, Glib::RefPtr<Gdk::Pixbuf> picture);
+    int upload_image(const std::string& filepath, int inventoryId = -1);
     Glib::RefPtr<Gdk::Pixbuf> get_image(int id);
     bool delete_data(int id);
 

@@ -25,6 +25,7 @@ private:
     void update_connection_status(bool connected);
     void print_setup();
     void image_load_and_shown();
+    void exportSqlDumpTo();
 
     void display_image(const Glib::RefPtr<Gdk::Pixbuf> &refPixBuf);
 
@@ -58,6 +59,7 @@ private:
         ModelColumns()
         {
             add(col_id);
+            add(col_image);
             add(col_code);
             add(col_name);
             add(col_desc);
@@ -65,7 +67,7 @@ private:
             add(col_loc);
             add(col_cdate);
         }
-        Gtk::TreeModelColumn<int> col_id;
+        Gtk::TreeModelColumn<int> col_id,col_image;
         Gtk::TreeModelColumn<Glib::ustring> col_code, col_name, col_desc, col_owner, col_cdate, col_loc;
     };
     ModelColumns m_data_columns;

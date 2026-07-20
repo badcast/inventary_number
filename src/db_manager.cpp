@@ -6,6 +6,8 @@
 #include <string.h>
 #include <iostream>
 
+#include "fast_csv.h"
+
 std::vector<std::shared_ptr<Classification>> mClassifications;
 
 std::vector<std::shared_ptr<Classification>> DbManager::get_types()
@@ -156,6 +158,7 @@ std::vector<BarcodeRecord> DbManager::get_all()
         rec.code = row["code"].c_str();
         rec.created_at = row["created_at"].c_str();
         rec.owned_at = row["owned_at"].c_str();
+        rec.image_id = row["image_id"].is_null() ? -1 : row["image_id"];
         records.push_back(rec);
     }
     return records;
@@ -231,50 +234,38 @@ std::vector<BarcodeRecord> DbManager::search(const std::string &query_str)
 
 void DbManager::import_from_str(const std::string type, const std::string filename, int group, char column)
 {
-    std::ifstream ifile(filename);
-    if (!ifile.is_open()) return;
-
     struct t {
         std::string name0;
         std::string name1;
         int c = 0;
+        std::string imageFileName;
     } t0;
 
     std::string line;
     std::vector<t> __i;
 
-    while (std::getline(ifile, line)) {
-        if (line.empty()) continue;
+    FastCsvImporter fscv(column);
 
-        int iid = 0;
-        int lhs = 0;
-        t0 = {};
-
-        for (int i = 0; i <= line.size(); ++i) {
-            if (i == line.size() || line[i] == column) {
-                int len = i - lhs;
-
-                if (iid == 0) {
-                    t0.name0 = line.substr(lhs, len);
-                } else if (iid == 1) {
-                    t0.name1 = line.substr(lhs, len);
-                } else if (iid == 2) {
-                    t0.c = std::stoi(line.substr(lhs, len));
-                }
-
-                lhs = i + 1;
-                iid++;
-            }
-        }
-        __i.push_back(t0);
-    }
-    ifile.close();
+    fscv.import(filename, [&t0, &__i](const std::vector<std::string_view>& headers, const std::vector<std::string_view>& row){
+           // En name
+            t0.name0 = row[0];
+            // Ru name
+            t0.name1 = row[1];
+            // Count
+            t0.c = std::stoi(std::string(row[2]));
+        // Imagefilename (image id)
+            t0.imageFileName = "/tmp/a/media/";
+            t0.imageFileName += row[3];
+         __i.push_back(t0);
+    });
 
     for(const t& tt : __i)
     {
+        int imageId = upload_image(tt.imageFileName);
         for(int i =0; i < tt.c; ++i)
         {
-            insert_data(type, tt.name1, tt.name0, -1, nullptr, group);
+            int insertId;
+            insert_data(type, tt.name1, tt.name0, -1, &insertId, group, imageId);
         }
     }
 }
@@ -309,7 +300,7 @@ bool DbManager::insert(const BarcodeRecord &rec)
     return query.execute(rec.code.c_str());
 }
 
-bool DbManager::insert_data(const std::string &type, const std::string &name, const std::string &name0, int ownerId, int *insertId, int group)
+bool DbManager::insert_data(const std::string &type, const std::string &name, const std::string &name0, int ownerId, int *insertId, int group, int imageId)
 {
     if(!conn || !conn->connected() || type.length() != 2 || name.length() < 3)
         return false;
@@ -334,7 +325,7 @@ bool DbManager::insert_data(const std::string &type, const std::string &name, co
     query.reset();
 
     query << "INSERT INTO inventory "
-             "(code,name,name1,owner_id,type) VALUES (" << mysqlpp::quote << nextCode << ", " << mysqlpp::quote << name;
+             "(code,name,name1,owner_id,type,image_id) VALUES (" << mysqlpp::quote << nextCode << ", " << mysqlpp::quote << name;
     query << ", ";
     if(!name0.empty())
         query << mysqlpp::quote << name0;
@@ -349,6 +340,8 @@ bool DbManager::insert_data(const std::string &type, const std::string &name, co
         query << ownerId;
 
     query << "," << group;
+
+    query << "," << imageId;
 
     query << ")";
 
@@ -425,6 +418,43 @@ bool DbManager::update_image(int id, Glib::RefPtr<Gdk::Pixbuf> picture)
     query.execute(result.insert_id(), id);
 
     return result;
+}
+
+int DbManager::upload_image(const std::string &filepath, int inventoryId)
+{
+    Glib::RefPtr<Gdk::Pixbuf> picture = Gdk::Pixbuf::create_from_file(filepath);
+
+    gchar * buffer=  nullptr;
+    gsize buffer_size = 0;
+    try
+    {
+        picture->save_to_buffer(buffer,buffer_size, "jpeg");
+    } catch (...)
+    {
+        return -1;
+    }
+
+    mysqlpp::sql_blob blob(buffer, buffer_size);
+    mysqlpp::Query query = conn->query("INSERT INTO images (data) VALUES (%0q)");
+    query.parse();
+
+    mysqlpp::SimpleResult result = query.execute(blob);
+    g_free(buffer);
+
+    if(!result)
+        return -1;
+
+    int id = result.insert_id();
+
+    if(inventoryId > -1)
+    {
+        query.reset();
+        query = conn->query("UPDATE inventory SET image_id = %0 WHERE id = %1");
+        query.parse();
+        result = query.execute(id, inventoryId);
+    }
+
+    return id;
 }
 
 Glib::RefPtr<Gdk::Pixbuf> DbManager::get_image(int id)

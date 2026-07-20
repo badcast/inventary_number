@@ -11,6 +11,8 @@ AppWindow::AppWindow()
     auto &db = DbManager::get();
     db.connect_db("localhost", 3306, "barcode_db", "invent", "123");
     load_table();
+
+   // DbManager::get().import_from_str("MO", "/home/badcast/Desktop/items.csv", 3);
 }
 
 AppWindow::~AppWindow()
@@ -77,6 +79,7 @@ void AppWindow::setup_ui()
     m_tree_view.set_model(m_list_model);
     // m_tree_view.append_column("ID", m_data_columns.col_id);
     m_tree_view.append_column("Код", m_data_columns.col_code);
+    m_tree_view.append_column("Иконка", m_data_columns.col_image);
     m_tree_view.append_column("Ярлык", m_data_columns.col_name);
     m_tree_view.append_column("Описание", m_data_columns.col_desc);
     m_tree_view.append_column("Ответcвенный", m_data_columns.col_owner);
@@ -148,6 +151,7 @@ void AppWindow::load_table()
         }
 
         row[m_data_columns.col_id] = r.id;
+        row[m_data_columns.col_image] = r.image_id;
         row[m_data_columns.col_code] = r.code;
         row[m_data_columns.col_name] = r.name;
         row[m_data_columns.col_desc] = r.description;
@@ -175,6 +179,7 @@ void AppWindow::on_search_changed()
         }
 
         row[m_data_columns.col_id] = r.id;
+        row[m_data_columns.col_image] = r.image_id;
         row[m_data_columns.col_code] = r.code;
         row[m_data_columns.col_name] = r.name;
         row[m_data_columns.col_desc] = r.description;
