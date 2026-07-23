@@ -12,7 +12,7 @@ AppWindow::AppWindow()
     db.connect_db("localhost", 3306, "barcode_db", "invent", "123");
     load_table();
 
-   // DbManager::get().import_from_str("MO", "/home/badcast/Desktop/items.csv", 3);
+    // DbManager::get().import_from_str("MO", "/home/badcast/Desktop/items.csv", 3);
 }
 
 AppWindow::~AppWindow()
@@ -50,11 +50,11 @@ void AppWindow::setup_ui()
     m_db_btn_box.append(m_btn_add_owner);
     m_db_btn_box.append(m_btn_print);
 
-    m_preview_picture.set_halign(Gtk::Align::CENTER);
-    m_preview_picture.set_valign(Gtk::Align::CENTER);
-    m_preview_picture.set_hexpand(false);
-    m_preview_picture.set_vexpand(false);
+    m_preview_picture.set_halign(Gtk::Align::FILL);
+    m_preview_picture.set_valign(Gtk::Align::FILL);
     m_preview_picture.set_size_request(100, 100);
+    m_preview_picture.set_expand(false);
+    m_preview_picture.set_can_shrink(true);
     m_left_box.append(m_preview_picture);
 
     m_preview_label.set_label("< No image >");
@@ -125,7 +125,15 @@ void AppWindow::display_image(const Glib::RefPtr<Gdk::Pixbuf> &refPixBuf)
         m_preview_picture.set_paintable(nullptr);
         return;
     }
-    auto texture = Gdk::Texture::create_for_pixbuf(refPixBuf);
+    auto pixbuf = refPixBuf;
+    int w = pixbuf->get_width();
+    int h = pixbuf->get_height();
+    int max_dim = 250;
+    if (w > max_dim || h > max_dim) {
+        double scale = std::min((double)max_dim / w, (double)max_dim / h);
+        pixbuf = pixbuf->scale_simple(w * scale, h * scale, Gdk::InterpType::BILINEAR);
+    }
+    auto texture = Gdk::Texture::create_for_pixbuf(pixbuf);
     m_preview_picture.set_paintable(texture);
     m_preview_label.set_visible(false);
 }

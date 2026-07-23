@@ -1,6 +1,7 @@
 #include "db_manager.h"
 
 #include <fstream>
+#include <numeric>
 #include <vector>
 #include <string>
 #include <string.h>
@@ -253,10 +254,14 @@ void DbManager::import_from_str(const std::string type, const std::string filena
             t0.name1 = row[1];
             // Count
             t0.c = std::stoi(std::string(row[2]));
-        // Imagefilename (image id)
-            t0.imageFileName = "/tmp/a/media/";
+            // Imagefilename (image id)
+            t0.imageFileName = "/tmp/media/";
             t0.imageFileName += row[3];
          __i.push_back(t0);
+    });
+
+    int total = std::accumulate(std::begin(__i),std::end(__i), 0, [](auto i, auto j){
+        return i + std::abs(j.c);
     });
 
     for(const t& tt : __i)
