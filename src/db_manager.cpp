@@ -248,16 +248,16 @@ void DbManager::import_from_str(const std::string type, const std::string filena
     FastCsvImporter fscv(column);
 
     fscv.import(filename, [&t0, &__i](const std::vector<std::string_view>& headers, const std::vector<std::string_view>& row){
-           // En name
-            t0.name0 = row[0];
-            // Ru name
-            t0.name1 = row[1];
-            // Count
-            t0.c = std::stoi(std::string(row[2]));
-            // Imagefilename (image id)
-            t0.imageFileName = "/tmp/media/";
-            t0.imageFileName += row[3];
-         __i.push_back(t0);
+        // En name
+        t0.name0 = row[0];
+        // Ru name
+        t0.name1 = row[1];
+        // Count
+        t0.c = std::stoi(std::string(row[2]));
+        // Imagefilename (image id)
+        t0.imageFileName = "/tmp/media/";
+        t0.imageFileName += row[3];
+        __i.push_back(t0);
     });
 
     int total = std::accumulate(std::begin(__i),std::end(__i), 0, [](auto i, auto j){
@@ -346,7 +346,10 @@ bool DbManager::insert_data(const std::string &type, const std::string &name, co
 
     query << "," << group;
 
-    query << "," << imageId;
+    if(imageId == -1)
+        query << "," <<"NULL";
+    else
+        query << "," << imageId;
 
     query << ")";
 
@@ -427,7 +430,15 @@ bool DbManager::update_image(int id, Glib::RefPtr<Gdk::Pixbuf> picture)
 
 int DbManager::upload_image(const std::string &filepath, int inventoryId)
 {
-    Glib::RefPtr<Gdk::Pixbuf> picture = Gdk::Pixbuf::create_from_file(filepath);
+    Glib::RefPtr<Gdk::Pixbuf> picture;
+    try
+    {
+        picture = Gdk::Pixbuf::create_from_file(filepath);
+    }
+    catch (...)
+    {
+        return -1;
+    }
 
     gchar * buffer=  nullptr;
     gsize buffer_size = 0;

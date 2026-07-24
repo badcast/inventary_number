@@ -12,7 +12,7 @@ AppWindow::AppWindow()
     db.connect_db("localhost", 3306, "barcode_db", "invent", "123");
     load_table();
 
-    // DbManager::get().import_from_str("MO", "/home/badcast/Desktop/items.csv", 3);
+    // DbManager::get().import_from_str("MO", "/home/badcast/Desktop/items.csv", 4);
 }
 
 AppWindow::~AppWindow()

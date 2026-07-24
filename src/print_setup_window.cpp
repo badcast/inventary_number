@@ -54,6 +54,9 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
     cr->set_source_rgb(1, 1, 1);
     cr->paint();
 
+    bool show_bar_text = m_chb_show_text_bar.get_active();
+    bool show_text = show_bar_text && m_chb_show_text.get_active();
+
     double ml = m_page_setup->get_left_margin(Gtk::Unit::POINTS);
     double mt = m_page_setup->get_top_margin(Gtk::Unit::POINTS);
     double mr = m_page_setup->get_right_margin(Gtk::Unit::POINTS);
@@ -64,8 +67,36 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
     double iw_pt = m_item_width_cm * CM_TO_PT;
     double ih_pt = m_item_height_cm * CM_TO_PT;
 
-    int cols = std::max(1, (int)(cw / iw_pt));
-    int rows = std::max(1, (int)(ch / ih_pt));
+    double dynamic_font_size = std::max(4.0, ih_pt * 0.12);
+    double code_font_size = std::max(4.0, dynamic_font_size * 0.85);
+    double text_margin = code_font_size * 2.0;
+    double actual_barcode_h = std::max(9.0, ih_pt - text_margin);
+
+    double grid_w = iw_pt;
+    double grid_h = ih_pt;
+
+    if (!show_text || !show_bar_text) {
+        double sample_final_w = iw_pt - 8.0;
+        double sample_final_h = actual_barcode_h;
+
+        if (!m_data.empty()) {
+            Glib::RefPtr<Gdk::Pixbuf> sample_pb = generate_barcode(m_data[0].code, BARCODE_CODE128, false, (int)actual_barcode_h);
+            if (sample_pb) {
+                double orig_w = sample_pb->get_width();
+                double orig_h = sample_pb->get_height();
+                double max_b_w = iw_pt - 8.0;
+                double scale = std::min(max_b_w / orig_w, actual_barcode_h / orig_h);
+                sample_final_w = std::max(1.0, orig_w * scale);
+                sample_final_h = std::max(1.0, orig_h * scale);
+            }
+        }
+
+        if (!show_text) grid_w = sample_final_w + 8.0;
+        if (!show_bar_text) grid_h = sample_final_h;
+    }
+
+    int cols = std::max(1, (int)(cw / grid_w));
+    int rows = std::max(1, (int)(ch / grid_h));
     int per_page = cols * rows;
     int start_idx = page_nr * per_page;
 
@@ -73,7 +104,6 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
     if (items_on_page <= 0)
         return;
 
-    // Отрисовка линий обреза
     if(m_cutline != CutLineType::NONE)
     {
         cr->save();
@@ -99,9 +129,9 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
             {
                 int line_cols = std::max(get_row_cols(r - 1), get_row_cols(r));
                 if (line_cols > 0) {
-                    double y = mt + r * ih_pt;
+                    double y = mt + r * grid_h;
                     cr->move_to(ml, y);
-                    cr->line_to(ml + line_cols * iw_pt, y);
+                    cr->line_to(ml + line_cols * grid_w, y);
                 }
             }
             cr->stroke();
@@ -113,9 +143,9 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
             {
                 int line_rows = std::max(get_col_rows(c - 1), get_col_rows(c));
                 if (line_rows > 0) {
-                    double x = ml + c * iw_pt;
+                    double x = ml + c * grid_w;
                     cr->move_to(x, mt);
-                    cr->line_to(x, mt + line_rows * ih_pt);
+                    cr->line_to(x, mt + line_rows * grid_h);
                 }
             }
             cr->stroke();
@@ -125,13 +155,6 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
 
     Gdk::InterpType _interptype = Gdk::InterpType::NEAREST;
 
-    // --- ДИНАМИЧЕСКИЙ РАСЧЕТ ПРОПОРЦИЙ ---
-    double barcode_area_w = iw_pt * 0.6;
-    double text_area_w = iw_pt - barcode_area_w;
-
-    // Динамический размер шрифта: около 12% от высоты этикетки, но не меньше 4pt
-    double dynamic_font_size = std::max(4.0, ih_pt * 0.12);
-    double code_font_size = std::max(4.0, dynamic_font_size * 0.85); // Код чуть мельче основного текста
     double line_height_ru = dynamic_font_size * 1.25;
     double line_height_en = dynamic_font_size * 1.15;
 
@@ -186,17 +209,9 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
         return lines;
     };
 
-    for(int i = 0; i < per_page; ++i)
+    for(int i = 0; i < items_on_page; ++i)
     {
         int idx = start_idx + i;
-        if(idx >= (int)m_data.size())
-            break;
-
-        bool show_text = m_chb_show_text.get_active();
-
-        // Высота штрихкода: оставляем место внизу под подпись кода
-        double text_margin = code_font_size * 2.0;
-        double actual_barcode_h = show_text ? std::max(9.0, ih_pt - text_margin) : ih_pt;
 
         Glib::RefPtr<Gdk::Pixbuf> barcode_pixbuf = generate_barcode(m_data[idx].code, BARCODE_CODE128, false, (int)actual_barcode_h);
 
@@ -205,22 +220,32 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
             double orig_w = barcode_pixbuf->get_width();
             double orig_h = barcode_pixbuf->get_height();
 
-            double max_b_w = show_text ? (barcode_area_w - 4.0) : (iw_pt - 4.0);
-            double scale = std::min(max_b_w / orig_w, actual_barcode_h / orig_h);
+            double max_b_w = grid_w - 8.0;
+            double max_b_h = show_bar_text ? actual_barcode_h : grid_h;
+            
+            double scale = std::min(max_b_w / orig_w, max_b_h / orig_h);
 
             int final_w = std::max(1, (int)(orig_w * scale));
             int final_h = std::max(1, (int)(orig_h * scale));
 
-            Glib::RefPtr<Gdk::Pixbuf> scaled = barcode_pixbuf->scale_simple(final_w, final_h, _interptype);
+            Glib::RefPtr<Gdk::Pixbuf> scaled = barcode_pixbuf->scale_simple(final_w, final_h + (show_bar_text==false?-2:0), _interptype);
 
             int c = i % cols;
             int r = i / cols;
-            double cell_x = ml + c * iw_pt;
-            double cell_y = mt + r * ih_pt;
 
-            double area_w = show_text ? barcode_area_w : iw_pt;
-            double bx = std::round(cell_x + (area_w - final_w) / 2.0);
-            double by = show_text ? std::round(cell_y) : std::round(cell_y + (ih_pt - final_h) / 2.0);
+            double cell_x = ml + c * grid_w;
+            double cell_y = mt + r * grid_h;
+
+            double bx = cell_x + 4.0;
+            if (!show_text) {
+                bx = cell_x + std::max(4.0, (grid_w - final_w) / 2.0);
+            }
+            
+            double by = std::round(cell_y);
+            if (!show_bar_text) {
+                by = cell_y + std::max(0.0, (grid_h - final_h) / 2.0);
+
+            }
 
             cr->save();
             cr->set_antialias(Cairo::Antialias::ANTIALIAS_NONE);
@@ -228,84 +253,81 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
             cr->paint();
             cr->restore();
 
-            if(show_text)
+            if(show_bar_text)
             {
                 cr->set_source_rgb(0, 0, 0);
 
-                // 1. Отрисовка ID кода под штрихкодом
                 cr->select_font_face("Sans", Cairo::ToyFontFace::Slant::NORMAL, Cairo::ToyFontFace::Weight::BOLD);
                 cr->set_font_size(code_font_size);
 
                 std::string code_str = m_data[idx].code;
-                code_str = fit_string(code_str, max_b_w);
+
+                code_str = fit_string(code_str, final_w);
                 Cairo::TextExtents ext_code;
                 cr->get_text_extents(code_str, ext_code);
 
-                double tx_code = cell_x + std::max(2.0, (barcode_area_w - ext_code.width) / 2.0);
+                double tx_code = bx + std::max(0.0, (final_w - ext_code.width) / 2.0);
                 double ty_code = by + final_h + ext_code.height + (code_font_size * 0.3);
 
                 cr->move_to(tx_code, ty_code);
                 cr->show_text(code_str);
 
-                // --- НАСТРОЙКИ ПРАВОГО БЛОКА ---
-                double padding = 3.0;
-                double text_start_x = cell_x + barcode_area_w + padding;
-                double allowed_text_w = text_area_w - (padding * 2.0);
+                if(show_text)
+                {
+                    double padding = 4.0;
+                    double text_start_x = bx + final_w + padding;
+                    double allowed_text_w = (cell_x + iw_pt) - text_start_x - padding;
+                    double current_text_y = cell_y + dynamic_font_size * 1.2;
 
-                // Стартовая позиция по Y зависит от размера шрифта
-                double current_y = cell_y + dynamic_font_size * 1.2;
+                    cr->select_font_face("Sans", Cairo::ToyFontFace::Slant::NORMAL, Cairo::ToyFontFace::Weight::NORMAL);
+                    cr->set_font_size(dynamic_font_size);
 
-                // 2. Отрисовка RU описания
-                cr->select_font_face("Sans", Cairo::ToyFontFace::Slant::NORMAL, Cairo::ToyFontFace::Weight::NORMAL);
-                cr->set_font_size(dynamic_font_size);
+                    std::vector<std::string> ru_lines = wrap_text(m_data[idx].name_ru, allowed_text_w);
 
-                std::vector<std::string> ru_lines = wrap_text(m_data[idx].name_ru, allowed_text_w);
-
-                for (size_t l = 0; l < ru_lines.size() && l < 4; ++l) {
-                    cr->move_to(text_start_x, current_y);
-                    cr->show_text(ru_lines[l]);
-                    current_y += line_height_ru;
-                }
-
-                // 3. Горизонтальный разделитель
-                current_y -= line_height_ru * 0.3; // Корректировка, чтобы линия встала по центру между блоками
-                cr->set_line_width(0.3);
-                cr->move_to(text_start_x, current_y);
-                cr->line_to(cell_x + iw_pt - padding, current_y);
-                cr->stroke();
-
-                current_y += line_height_ru * 0.8;
-
-                // 4. Отрисовка EN описания
-                if (!m_data[idx].name_en.empty()) {
-                    cr->set_font_size(dynamic_font_size * 0.9); // EN текст немного меньше RU текста
-                    std::vector<std::string> en_lines = wrap_text(m_data[idx].name_en, allowed_text_w);
-
-                    for (size_t l = 0; l < en_lines.size() && l < 3; ++l) {
-                        cr->move_to(text_start_x, current_y);
-                        cr->show_text(en_lines[l]);
-                        current_y += line_height_en;
+                    for (size_t l = 0; l < ru_lines.size() && l < 4; ++l) {
+                        cr->move_to(text_start_x, current_text_y);
+                        cr->show_text(ru_lines[l]);
+                        current_text_y += line_height_ru;
                     }
+
+                    current_text_y -= line_height_ru * 0.3;
+                    cr->set_line_width(0.3);
+                    cr->move_to(text_start_x, current_text_y);
+                    cr->line_to(cell_x + iw_pt - padding, current_text_y);
+                    cr->stroke();
+
+                    current_text_y += line_height_ru * 0.8;
+
+                    if (!m_data[idx].name_en.empty()) {
+                        cr->set_font_size(dynamic_font_size * 0.9);
+                        std::vector<std::string> en_lines = wrap_text(m_data[idx].name_en, allowed_text_w);
+
+                        for (size_t l = 0; l < en_lines.size() && l < 3; ++l) {
+                            cr->move_to(text_start_x, current_text_y);
+                            cr->show_text(en_lines[l]);
+                            current_text_y += line_height_en;
+                        }
+                    }
+
+                    double company_font_size = std::max(3.5, dynamic_font_size * 0.7);
+                    cr->select_font_face("Sans", Cairo::ToyFontFace::Slant::NORMAL, Cairo::ToyFontFace::Weight::BOLD);
+                    cr->set_font_size(company_font_size);
+
+                    std::string company_txt = "ТОО \"RITM-MEDICAL-CENTER\"";
+                    Cairo::TextExtents ext_company;
+                    cr->get_text_extents(company_txt, ext_company);
+
+                    double company_x = cell_x + iw_pt - ext_company.width - padding;
+                    company_x = std::max(company_x, text_start_x);
+                    double company_y = cell_y + ih_pt - padding;
+
+                    cr->move_to(company_x, company_y);
+                    cr->show_text(company_txt);
                 }
-
-                double company_font_size = std::max(3.5, dynamic_font_size * 0.7);
-                cr->select_font_face("Sans", Cairo::ToyFontFace::Slant::NORMAL, Cairo::ToyFontFace::Weight::BOLD);
-                cr->set_font_size(company_font_size);
-
-                std::string company_txt = "ТОО \"RITM-MEDICAL-CENTER\"";
-                Cairo::TextExtents ext_company;
-                cr->get_text_extents(company_txt, ext_company);
-
-                text_start_x = cell_x + iw_pt - ext_company.width - padding;
-                current_y = cell_y + ih_pt - padding;
-
-                cr->move_to(text_start_x, current_y);
-                cr->show_text(company_txt);
             }
         }
     }
 }
-
 void PrintSetupWindow::draw_preview_page()
 {
     if(m_data.empty())
@@ -434,6 +456,13 @@ void PrintSetupWindow::init_ui()
     m_chb_no_border.set_active(true);
     m_chb_no_border.signal_toggled().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
     m_controls.append(m_chb_no_border);
+
+    m_chb_show_text_bar.set_active(true);
+    m_chb_show_text_bar.signal_toggled().connect([this](){
+        m_chb_show_text.set_sensitive(m_chb_show_text_bar.get_active());
+        PrintSetupWindow::soft_update_state();
+    });
+    m_controls.append(m_chb_show_text_bar);
 
     m_chb_show_text.set_active(true);
     m_chb_show_text.signal_toggled().connect(sigc::mem_fun(*this, &PrintSetupWindow::soft_update_state));
@@ -585,8 +614,39 @@ void PrintSetupWindow::soft_update_state()
     double iw_pt = m_item_width_cm * CM_TO_PT;
     double ih_pt = m_item_height_cm * CM_TO_PT;
 
-    int cols = std::max(1, (int)(cw / iw_pt));
-    int rows = std::max(1, (int)(ch / ih_pt));
+    bool show_bar_text = m_chb_show_text_bar.get_active();
+    bool show_text = show_bar_text && m_chb_show_text.get_active();
+
+    double grid_w = iw_pt;
+    double grid_h = ih_pt;
+
+    if (!show_text || !show_bar_text) {
+        double dynamic_font_size = std::max(4.0, ih_pt * 0.12);
+        double code_font_size = std::max(4.0, dynamic_font_size * 0.85);
+        double text_margin = code_font_size * 2.0;
+        double actual_barcode_h = std::max(9.0, ih_pt - text_margin);
+
+        double sample_final_w = iw_pt - 8.0;
+        double sample_final_h = actual_barcode_h;
+
+        if (!m_data.empty()) {
+            Glib::RefPtr<Gdk::Pixbuf> sample_pb = generate_barcode(m_data[0].code, BARCODE_CODE128, false, (int)actual_barcode_h);
+            if (sample_pb) {
+                double orig_w = sample_pb->get_width();
+                double orig_h = sample_pb->get_height();
+                double max_b_w = iw_pt - 8.0;
+                double scale = std::min(max_b_w / orig_w, actual_barcode_h / orig_h);
+                sample_final_w = std::max(1.0, orig_w * scale);
+                sample_final_h = std::max(1.0, orig_h * scale);
+            }
+        }
+
+        if (!show_text) grid_w = sample_final_w + 8.0;
+        if (!show_bar_text) grid_h = sample_final_h;
+    }
+
+    int cols = std::max(1, (int)(cw / grid_w));
+    int rows = std::max(1, (int)(ch / grid_h));
     int per_page = cols * rows;
 
     m_cutline = static_cast<CutLineType>(m_combo_cutline.get_active_row_number());

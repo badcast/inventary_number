@@ -64,6 +64,7 @@ protected:
     Gtk::ComboBoxText m_combo_cutline;
     Gtk::CheckButton m_chb_no_border {"Без полей"};
     Gtk::CheckButton m_chb_show_text {"Показывать текст"};
+    Gtk::CheckButton m_chb_show_text_bar {"Показывать код"};
 
     Gtk::Button m_btn_prev;
     Gtk::Button m_btn_next;
