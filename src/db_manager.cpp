@@ -16,15 +16,15 @@ std::vector<std::shared_ptr<Classification>> DbManager::get_types()
     if(mClassifications.empty())
     {
         std::vector<Classification> data = {
-                                             {"MO", "Мед. оборудование", "ЭКГ, УЗИ-аппараты, дефибрилляторы, мониторы пациента."},
-                                             {"KT", "Компьютерная техника", "Системные блоки, серверы, ноутбуки, планшеты врачей."},
-                                             {"KP", "Периферия и оргтехника", "Принтеры, сканеры, МФУ, мониторы, ИБП."},
-                                             {"MB", "Мебель", "Столы, шкафы, медицинские кушетки, тумбы, кровати."},
-                                             {"HI", "Хоз. инвентарь", "Сейфы, холодильники для лекарств, микроволновки, кондиционеры."},
-                                             {"VS", "Видеоенаблюдение", "Камеры (IP/аналог), видеорегистраторы."},
-                                             {"AV", "Аудио-визуальное", "Телевизоры в холлах, проекторы в конференц-залах."},
-                                             {"TR", "Транспортировка", "Кресла-каталки, носилки, тележки для инструментов."},
-                                             {"IT", "Расходные (дорогие)", "Специальные эргономичные мыши, сложные датчики (если нужен поштучный учет)."}};
+            {"MO", "Мед. оборудование", "ЭКГ, УЗИ-аппараты, дефибрилляторы, мониторы пациента."},
+            {"KT", "Компьютерная техника", "Системные блоки, серверы, ноутбуки, планшеты врачей."},
+            {"KP", "Периферия и оргтехника", "Принтеры, сканеры, МФУ, мониторы, ИБП."},
+            {"MB", "Мебель", "Столы, шкафы, медицинские кушетки, тумбы, кровати."},
+            {"HI", "Хоз. инвентарь", "Сейфы, холодильники для лекарств, микроволновки, кондиционеры."},
+            {"VS", "Видеоенаблюдение", "Камеры (IP/аналог), видеорегистраторы."},
+            {"AV", "Аудио-визуальное", "Телевизоры в холлах, проекторы в конференц-залах."},
+            {"TR", "Транспортировка", "Кресла-каталки, носилки, тележки для инструментов."},
+            {"IT", "Расходные (дорогие)", "Специальные эргономичные мыши, сложные датчики (если нужен поштучный учет)."}};
 
         mClassifications.reserve(data.size());
 
@@ -97,7 +97,7 @@ bool DbManager::create_tables()
             updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         );)")
                .execute() &&
-           conn->query(R"(
+        conn->query(R"(
         CREATE TABLE IF NOT EXISTS inventory (
             id           INT AUTO_INCREMENT PRIMARY KEY,
             code         VARCHAR(255) NOT NULL UNIQUE,
@@ -111,7 +111,7 @@ bool DbManager::create_tables()
 
             FOREIGN KEY  ownerid_fk(owner_id) REFERENCES owners (id)
         );)")
-               .execute();
+            .execute();
 }
 
 std::vector<Owner> DbManager::get_owners()
@@ -235,7 +235,8 @@ std::vector<BarcodeRecord> DbManager::search(const std::string &query_str)
 
 void DbManager::import_from_str(const std::string type, const std::string filename, int group, char column)
 {
-    struct t {
+    struct t
+    {
         std::string name0;
         std::string name1;
         int c = 0;
@@ -247,27 +248,28 @@ void DbManager::import_from_str(const std::string type, const std::string filena
 
     FastCsvImporter fscv(column);
 
-    fscv.import(filename, [&t0, &__i](const std::vector<std::string_view>& headers, const std::vector<std::string_view>& row){
-        // En name
-        t0.name0 = row[0];
-        // Ru name
-        t0.name1 = row[1];
-        // Count
-        t0.c = std::stoi(std::string(row[2]));
-        // Imagefilename (image id)
-        t0.imageFileName = "/tmp/media/";
-        t0.imageFileName += row[3];
-        __i.push_back(t0);
-    });
+    fscv.import(
+        filename,
+        [&t0, &__i](const std::vector<std::string_view> &headers, const std::vector<std::string_view> &row)
+        {
+            // En name
+            t0.name0 = row[0];
+            // Ru name
+            t0.name1 = row[1];
+            // Count
+            t0.c = std::stoi(std::string(row[2]));
+            // Imagefilename (image id)
+            t0.imageFileName = "/tmp/media/";
+            t0.imageFileName += row[3];
+            __i.push_back(t0);
+        });
 
-    int total = std::accumulate(std::begin(__i),std::end(__i), 0, [](auto i, auto j){
-        return i + std::abs(j.c);
-    });
+    int total = std::accumulate(std::begin(__i), std::end(__i), 0, [](auto i, auto j) { return i + std::abs(j.c); });
 
-    for(const t& tt : __i)
+    for(const t &tt : __i)
     {
         int imageId = upload_image(tt.imageFileName);
-        for(int i =0; i < tt.c; ++i)
+        for(int i = 0; i < tt.c; ++i)
         {
             int insertId;
             insert_data(type, tt.name1, tt.name0, -1, &insertId, group, imageId);
@@ -330,7 +332,8 @@ bool DbManager::insert_data(const std::string &type, const std::string &name, co
     query.reset();
 
     query << "INSERT INTO inventory "
-             "(code,name,name1,owner_id,type,image_id) VALUES (" << mysqlpp::quote << nextCode << ", " << mysqlpp::quote << name;
+             "(code,name,name1,owner_id,type,image_id) VALUES ("
+          << mysqlpp::quote << nextCode << ", " << mysqlpp::quote << name;
     query << ", ";
     if(!name0.empty())
         query << mysqlpp::quote << name0;
@@ -347,7 +350,7 @@ bool DbManager::insert_data(const std::string &type, const std::string &name, co
     query << "," << group;
 
     if(imageId == -1)
-        query << "," <<"NULL";
+        query << "," << "NULL";
     else
         query << "," << imageId;
 
@@ -398,12 +401,13 @@ bool DbManager::update_image(int id, Glib::RefPtr<Gdk::Pixbuf> picture)
     if(!conn || !conn->connected() || !picture)
         return false;
 
-    gchar * buffer=  nullptr;
+    gchar *buffer = nullptr;
     gsize buffer_size = 0;
     try
     {
-        picture->save_to_buffer(buffer,buffer_size, "jpeg");
-    } catch (...)
+        picture->save_to_buffer(buffer, buffer_size, "jpeg");
+    }
+    catch(...)
     {
         return false;
     }
@@ -435,17 +439,18 @@ int DbManager::upload_image(const std::string &filepath, int inventoryId)
     {
         picture = Gdk::Pixbuf::create_from_file(filepath);
     }
-    catch (...)
+    catch(...)
     {
         return -1;
     }
 
-    gchar * buffer=  nullptr;
+    gchar *buffer = nullptr;
     gsize buffer_size = 0;
     try
     {
-        picture->save_to_buffer(buffer,buffer_size, "jpeg");
-    } catch (...)
+        picture->save_to_buffer(buffer, buffer_size, "jpeg");
+    }
+    catch(...)
     {
         return -1;
     }
@@ -491,7 +496,7 @@ Glib::RefPtr<Gdk::Pixbuf> DbManager::get_image(int id)
         {
             mysqlpp::String blob_data = row["data"];
             Glib::RefPtr<Gdk::PixbufLoader> loader = Gdk::PixbufLoader::create();
-            loader->write(reinterpret_cast<const guint8*>(blob_data.data()), blob_data.size());
+            loader->write(reinterpret_cast<const guint8 *>(blob_data.data()), blob_data.size());
             loader->close();
             result = loader->get_pixbuf();
         }

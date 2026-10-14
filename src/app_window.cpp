@@ -98,22 +98,24 @@ void AppWindow::setup_actions()
     m_btn_print.signal_clicked().connect(sigc::mem_fun(*this, &AppWindow::print_setup));
     m_btn_refresh.signal_clicked().connect(sigc::mem_fun(*this, &AppWindow::on_refresh));
     m_btn_load_img.signal_clicked().connect(sigc::mem_fun(*this, &AppWindow::image_load_and_shown));
-    m_tree_view.signal_cursor_changed().connect([this](){
-        int id = -1;
-        Glib::RefPtr<Gdk::Pixbuf> image;
-        std::vector<Gtk::TreeModel::Path>  rows = m_tree_view.get_selection()->get_selected_rows();
-        if(!rows.empty())
+    m_tree_view.signal_cursor_changed().connect(
+        [this]()
         {
-            Gtk::TreeModel::iterator iter = m_list_model->get_iter(rows[0]);
-            if(iter)
+            int id = -1;
+            Glib::RefPtr<Gdk::Pixbuf> image;
+            std::vector<Gtk::TreeModel::Path> rows = m_tree_view.get_selection()->get_selected_rows();
+            if(!rows.empty())
             {
-                Gtk::TreeModel::Row row = *iter;
-                id = row[m_data_columns.col_id];
-                image = DbManager::get().get_image(id);
+                Gtk::TreeModel::iterator iter = m_list_model->get_iter(rows[0]);
+                if(iter)
+                {
+                    Gtk::TreeModel::Row row = *iter;
+                    id = row[m_data_columns.col_id];
+                    image = DbManager::get().get_image(id);
+                }
             }
-        }
-        display_image(image);
-    });
+            display_image(image);
+        });
     m_search_entry.signal_changed().connect(sigc::mem_fun(*this, &AppWindow::on_search_changed));
 }
 
@@ -129,8 +131,9 @@ void AppWindow::display_image(const Glib::RefPtr<Gdk::Pixbuf> &refPixBuf)
     int w = pixbuf->get_width();
     int h = pixbuf->get_height();
     int max_dim = 250;
-    if (w > max_dim || h > max_dim) {
-        double scale = std::min((double)max_dim / w, (double)max_dim / h);
+    if(w > max_dim || h > max_dim)
+    {
+        double scale = std::min((double) max_dim / w, (double) max_dim / h);
         pixbuf = pixbuf->scale_simple(w * scale, h * scale, Gdk::InterpType::BILINEAR);
     }
     auto texture = Gdk::Texture::create_for_pixbuf(pixbuf);
@@ -253,32 +256,41 @@ void AppWindow::image_load_and_shown()
     filters->append(filter_image);
     dialog->set_filters(filters);
 
-    dialog->open(*this, [this, dialog](Glib::RefPtr<Gio::AsyncResult>& result) {
-        try {
-            // Получаем выбранный файл
-            auto file = dialog->open_finish(result);
-            if (file) {
-                std::string path = file->get_path();
-
-                int id = -1;
-                Glib::RefPtr<Gdk::Pixbuf> image = Gdk::Pixbuf::create_from_file(path);
-                std::vector<Gtk::TreeModel::Path> rows = m_tree_view.get_selection()->get_selected_rows();
-                if(!rows.empty())
+    dialog->open(
+        *this,
+        [this, dialog](Glib::RefPtr<Gio::AsyncResult> &result)
+        {
+            try
+            {
+                // Получаем выбранный файл
+                auto file = dialog->open_finish(result);
+                if(file)
                 {
-                    Gtk::TreeModel::iterator iter = m_list_model->get_iter(rows[0]);
-                    if(iter)
+                    std::string path = file->get_path();
+
+                    int id = -1;
+                    Glib::RefPtr<Gdk::Pixbuf> image = Gdk::Pixbuf::create_from_file(path);
+                    std::vector<Gtk::TreeModel::Path> rows = m_tree_view.get_selection()->get_selected_rows();
+                    if(!rows.empty())
                     {
-                        Gtk::TreeModel::Row row = *iter;
-                        id = row[m_data_columns.col_id];
-                        DbManager::get().update_image(id, image);
-                        display_image(image);
+                        Gtk::TreeModel::iterator iter = m_list_model->get_iter(rows[0]);
+                        if(iter)
+                        {
+                            Gtk::TreeModel::Row row = *iter;
+                            id = row[m_data_columns.col_id];
+                            DbManager::get().update_image(id, image);
+                            display_image(image);
+                        }
                     }
                 }
             }
-        } catch (const Gtk::DialogError& err) {
-            // Пользователь нажал "Отмена" или закрыл окно (это нормально)
-        } catch (const Glib::Error& err) {
-            // Ошибка чтения файла
-        }
-    });
+            catch(const Gtk::DialogError &err)
+            {
+                // Пользователь нажал "Отмена" или закрыл окно (это нормально)
+            }
+            catch(const Glib::Error &err)
+            {
+                // Ошибка чтения файла
+            }
+        });
 }

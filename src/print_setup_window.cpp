@@ -75,13 +75,16 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
     double grid_w = iw_pt;
     double grid_h = ih_pt;
 
-    if (!show_text || !show_bar_text) {
+    if(!show_text || !show_bar_text)
+    {
         double sample_final_w = iw_pt - 8.0;
         double sample_final_h = actual_barcode_h;
 
-        if (!m_data.empty()) {
-            Glib::RefPtr<Gdk::Pixbuf> sample_pb = generate_barcode(m_data[0].code, BARCODE_CODE128, false, (int)actual_barcode_h);
-            if (sample_pb) {
+        if(!m_data.empty())
+        {
+            Glib::RefPtr<Gdk::Pixbuf> sample_pb = generate_barcode(m_data[0].code, BARCODE_CODE128, false, (int) actual_barcode_h);
+            if(sample_pb)
+            {
                 double orig_w = sample_pb->get_width();
                 double orig_h = sample_pb->get_height();
                 double max_b_w = iw_pt - 8.0;
@@ -91,17 +94,19 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
             }
         }
 
-        if (!show_text) grid_w = sample_final_w + 8.0;
-        if (!show_bar_text) grid_h = sample_final_h;
+        if(!show_text)
+            grid_w = sample_final_w + 8.0;
+        if(!show_bar_text)
+            grid_h = sample_final_h;
     }
 
-    int cols = std::max(1, (int)(cw / grid_w));
-    int rows = std::max(1, (int)(ch / grid_h));
+    int cols = std::max(1, (int) (cw / grid_w));
+    int rows = std::max(1, (int) (ch / grid_h));
     int per_page = cols * rows;
     int start_idx = page_nr * per_page;
 
-    int items_on_page = std::min(per_page, (int)m_data.size() - start_idx);
-    if (items_on_page <= 0)
+    int items_on_page = std::min(per_page, (int) m_data.size() - start_idx);
+    if(items_on_page <= 0)
         return;
 
     if(m_cutline != CutLineType::NONE)
@@ -113,13 +118,17 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
 
         int actual_rows = (items_on_page + cols - 1) / cols;
 
-        auto get_row_cols = [&](int r) {
-            if (r < 0 || r >= actual_rows) return 0;
+        auto get_row_cols = [&](int r)
+        {
+            if(r < 0 || r >= actual_rows)
+                return 0;
             return std::max(0, std::min(cols, items_on_page - r * cols));
         };
 
-        auto get_col_rows = [&](int c) {
-            if (c < 0 || c >= cols || items_on_page <= c) return 0;
+        auto get_col_rows = [&](int c)
+        {
+            if(c < 0 || c >= cols || items_on_page <= c)
+                return 0;
             return (items_on_page - c - 1) / cols + 1;
         };
 
@@ -128,7 +137,8 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
             for(int r = 0; r <= actual_rows; ++r)
             {
                 int line_cols = std::max(get_row_cols(r - 1), get_row_cols(r));
-                if (line_cols > 0) {
+                if(line_cols > 0)
+                {
                     double y = mt + r * grid_h;
                     cr->move_to(ml, y);
                     cr->line_to(ml + line_cols * grid_w, y);
@@ -142,7 +152,8 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
             for(int c = 0; c <= cols; ++c)
             {
                 int line_rows = std::max(get_col_rows(c - 1), get_col_rows(c));
-                if (line_rows > 0) {
+                if(line_rows > 0)
+                {
                     double x = ml + c * grid_w;
                     cr->move_to(x, mt);
                     cr->line_to(x, mt + line_rows * grid_h);
@@ -158,51 +169,66 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
     double line_height_ru = dynamic_font_size * 1.25;
     double line_height_en = dynamic_font_size * 1.15;
 
-    auto fit_string = [&](std::string text, double max_w) -> std::string {
+    auto fit_string = [&](std::string text, double max_w) -> std::string
+    {
         Cairo::TextExtents ext;
         cr->get_text_extents(text, ext);
-        if (ext.width <= max_w) return text;
+        if(ext.width <= max_w)
+            return text;
 
         Glib::ustring ustr(text);
         std::string suffix = "...";
 
-        while (ustr.length() > 0) {
+        while(ustr.length() > 0)
+        {
             cr->get_text_extents(ustr.raw() + suffix, ext);
-            if (ext.width <= max_w) break;
+            if(ext.width <= max_w)
+                break;
             ustr = ustr.substr(0, ustr.length() - 1);
         }
         return ustr.raw() + suffix;
     };
 
-    auto wrap_text = [&](const std::string& text, double max_w) -> std::vector<std::string> {
+    auto wrap_text = [&](const std::string &text, double max_w) -> std::vector<std::string>
+    {
         std::vector<std::string> lines;
         std::string current_line;
         std::istringstream words_stream(text);
         std::string word;
 
-        while (words_stream >> word) {
-            if (current_line.empty()) {
+        while(words_stream >> word)
+        {
+            if(current_line.empty())
+            {
                 current_line = word;
-            } else {
+            }
+            else
+            {
                 std::string test_line = current_line + " " + word;
                 Cairo::TextExtents ext;
                 cr->get_text_extents(test_line, ext);
-                if (ext.width > max_w) {
+                if(ext.width > max_w)
+                {
                     lines.push_back(current_line);
                     current_line = word;
-                } else {
+                }
+                else
+                {
                     current_line = test_line;
                 }
             }
         }
-        if (!current_line.empty()) {
+        if(!current_line.empty())
+        {
             lines.push_back(current_line);
         }
 
-        for (auto& line : lines) {
+        for(auto &line : lines)
+        {
             Cairo::TextExtents ext;
             cr->get_text_extents(line, ext);
-            if (ext.width > max_w) {
+            if(ext.width > max_w)
+            {
                 line = fit_string(line, max_w);
             }
         }
@@ -213,7 +239,7 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
     {
         int idx = start_idx + i;
 
-        Glib::RefPtr<Gdk::Pixbuf> barcode_pixbuf = generate_barcode(m_data[idx].code, BARCODE_CODE128, false, (int)actual_barcode_h);
+        Glib::RefPtr<Gdk::Pixbuf> barcode_pixbuf = generate_barcode(m_data[idx].code, BARCODE_CODE128, false, (int) actual_barcode_h);
 
         if(barcode_pixbuf)
         {
@@ -222,13 +248,13 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
 
             double max_b_w = grid_w - 8.0;
             double max_b_h = show_bar_text ? actual_barcode_h : grid_h;
-            
+
             double scale = std::min(max_b_w / orig_w, max_b_h / orig_h);
 
-            int final_w = std::max(1, (int)(orig_w * scale));
-            int final_h = std::max(1, (int)(orig_h * scale));
+            int final_w = std::max(1, (int) (orig_w * scale));
+            int final_h = std::max(1, (int) (orig_h * scale));
 
-            Glib::RefPtr<Gdk::Pixbuf> scaled = barcode_pixbuf->scale_simple(final_w, final_h + (show_bar_text==false?-2:0), _interptype);
+            Glib::RefPtr<Gdk::Pixbuf> scaled = barcode_pixbuf->scale_simple(final_w, final_h + (show_bar_text == false ? -2 : 0), _interptype);
 
             int c = i % cols;
             int r = i / cols;
@@ -237,14 +263,15 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
             double cell_y = mt + r * grid_h;
 
             double bx = cell_x + 4.0;
-            if (!show_text) {
+            if(!show_text)
+            {
                 bx = cell_x + std::max(4.0, (grid_w - final_w) / 2.0);
             }
-            
-            double by = std::round(cell_y);
-            if (!show_bar_text) {
-                by = cell_y + std::max(0.0, (grid_h - final_h) / 2.0);
 
+            double by = std::round(cell_y);
+            if(!show_bar_text)
+            {
+                by = cell_y + std::max(0.0, (grid_h - final_h) / 2.0);
             }
 
             cr->save();
@@ -284,7 +311,8 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
 
                     std::vector<std::string> ru_lines = wrap_text(m_data[idx].name_ru, allowed_text_w);
 
-                    for (size_t l = 0; l < ru_lines.size() && l < 4; ++l) {
+                    for(size_t l = 0; l < ru_lines.size() && l < 4; ++l)
+                    {
                         cr->move_to(text_start_x, current_text_y);
                         cr->show_text(ru_lines[l]);
                         current_text_y += line_height_ru;
@@ -298,11 +326,13 @@ void PrintSetupWindow::generate_page_content(Cairo::RefPtr<Cairo::Context> cr, i
 
                     current_text_y += line_height_ru * 0.8;
 
-                    if (!m_data[idx].name_en.empty()) {
+                    if(!m_data[idx].name_en.empty())
+                    {
                         cr->set_font_size(dynamic_font_size * 0.9);
                         std::vector<std::string> en_lines = wrap_text(m_data[idx].name_en, allowed_text_w);
 
-                        for (size_t l = 0; l < en_lines.size() && l < 3; ++l) {
+                        for(size_t l = 0; l < en_lines.size() && l < 3; ++l)
+                        {
                             cr->move_to(text_start_x, current_text_y);
                             cr->show_text(en_lines[l]);
                             current_text_y += line_height_en;
@@ -335,7 +365,7 @@ void PrintSetupWindow::draw_preview_page()
 
     double pw = m_page_setup->get_paper_width(Gtk::Unit::POINTS);
     double ph = m_page_setup->get_paper_height(Gtk::Unit::POINTS);
-    Cairo::RefPtr<Cairo::ImageSurface> surf = Cairo::ImageSurface::create(Cairo::Surface::Format::RGB24, (int)pw, (int)ph);
+    Cairo::RefPtr<Cairo::ImageSurface> surf = Cairo::ImageSurface::create(Cairo::Surface::Format::RGB24, (int) pw, (int) ph);
     Cairo::RefPtr<Cairo::Context> cr = Cairo::Context::create(surf);
 
     generate_page_content(cr, m_page, pw, ph, false);
@@ -344,7 +374,7 @@ void PrintSetupWindow::draw_preview_page()
     m_preview_page.set_pixbuf(pixbuf_preview);
 
     double scale_factor = 0.5;
-    m_preview_frame.set_size_request((int)(pw * scale_factor), (int)(ph * scale_factor));
+    m_preview_frame.set_size_request((int) (pw * scale_factor), (int) (ph * scale_factor));
 
     m_lbl_page.set_text("Стр. " + std::to_string(m_page + 1) + " из " + std::to_string(m_pages_total));
     m_btn_prev.set_sensitive(m_page > 0);
@@ -458,10 +488,12 @@ void PrintSetupWindow::init_ui()
     m_controls.append(m_chb_no_border);
 
     m_chb_show_text_bar.set_active(true);
-    m_chb_show_text_bar.signal_toggled().connect([this](){
-        m_chb_show_text.set_sensitive(m_chb_show_text_bar.get_active());
-        PrintSetupWindow::soft_update_state();
-    });
+    m_chb_show_text_bar.signal_toggled().connect(
+        [this]()
+        {
+            m_chb_show_text.set_sensitive(m_chb_show_text_bar.get_active());
+            PrintSetupWindow::soft_update_state();
+        });
     m_controls.append(m_chb_show_text_bar);
 
     m_chb_show_text.set_active(true);
@@ -620,7 +652,8 @@ void PrintSetupWindow::soft_update_state()
     double grid_w = iw_pt;
     double grid_h = ih_pt;
 
-    if (!show_text || !show_bar_text) {
+    if(!show_text || !show_bar_text)
+    {
         double dynamic_font_size = std::max(4.0, ih_pt * 0.12);
         double code_font_size = std::max(4.0, dynamic_font_size * 0.85);
         double text_margin = code_font_size * 2.0;
@@ -629,9 +662,11 @@ void PrintSetupWindow::soft_update_state()
         double sample_final_w = iw_pt - 8.0;
         double sample_final_h = actual_barcode_h;
 
-        if (!m_data.empty()) {
-            Glib::RefPtr<Gdk::Pixbuf> sample_pb = generate_barcode(m_data[0].code, BARCODE_CODE128, false, (int)actual_barcode_h);
-            if (sample_pb) {
+        if(!m_data.empty())
+        {
+            Glib::RefPtr<Gdk::Pixbuf> sample_pb = generate_barcode(m_data[0].code, BARCODE_CODE128, false, (int) actual_barcode_h);
+            if(sample_pb)
+            {
                 double orig_w = sample_pb->get_width();
                 double orig_h = sample_pb->get_height();
                 double max_b_w = iw_pt - 8.0;
@@ -641,17 +676,19 @@ void PrintSetupWindow::soft_update_state()
             }
         }
 
-        if (!show_text) grid_w = sample_final_w + 8.0;
-        if (!show_bar_text) grid_h = sample_final_h;
+        if(!show_text)
+            grid_w = sample_final_w + 8.0;
+        if(!show_bar_text)
+            grid_h = sample_final_h;
     }
 
-    int cols = std::max(1, (int)(cw / grid_w));
-    int rows = std::max(1, (int)(ch / grid_h));
+    int cols = std::max(1, (int) (cw / grid_w));
+    int rows = std::max(1, (int) (ch / grid_h));
     int per_page = cols * rows;
 
     m_cutline = static_cast<CutLineType>(m_combo_cutline.get_active_row_number());
 
-    m_pages_total = std::max(1, (int)std::ceil((double)m_data.size() / per_page));
+    m_pages_total = std::max(1, (int) std::ceil((double) m_data.size() / per_page));
 
     if(m_page >= m_pages_total)
         m_page = m_pages_total - 1;

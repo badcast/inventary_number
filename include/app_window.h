@@ -67,7 +67,7 @@ private:
             add(col_loc);
             add(col_cdate);
         }
-        Gtk::TreeModelColumn<int> col_id,col_image;
+        Gtk::TreeModelColumn<int> col_id, col_image;
         Gtk::TreeModelColumn<Glib::ustring> col_code, col_name, col_desc, col_owner, col_cdate, col_loc;
     };
     ModelColumns m_data_columns;

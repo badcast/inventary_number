@@ -17,7 +17,8 @@ struct Owner
     std::string room;
 };
 
-struct MemberFieldData{
+struct MemberFieldData
+{
     std::string code;
     std::string name_ru;
     std::string name_en;
@@ -85,7 +86,7 @@ public:
     bool insert_owner(const std::string &name, const std::string &cabinet, int *insertId = nullptr);
     bool update_data(const BarcodeRecord &rec);
     bool update_image(int id, Glib::RefPtr<Gdk::Pixbuf> picture);
-    int upload_image(const std::string& filepath, int inventoryId = -1);
+    int upload_image(const std::string &filepath, int inventoryId = -1);
     Glib::RefPtr<Gdk::Pixbuf> get_image(int id);
     bool delete_data(int id);
 
